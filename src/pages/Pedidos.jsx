@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Search, Filter, Package, CheckCircle, Clock, XCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, Search, Package, CheckCircle, Clock, XCircle, ChevronDown, ChevronUp } from 'lucide-react'
 
 export default function Pedidos() {
     const navigate = useNavigate()
@@ -105,8 +105,8 @@ export default function Pedidos() {
                         key={f.key}
                         onClick={() => setFiltroEstado(f.key)}
                         className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${filtroEstado === f.key
-                                ? 'bg-blue-900 text-white'
-                                : 'bg-gray-100 text-gray-600'
+                            ? 'bg-blue-900 text-white'
+                            : 'bg-gray-100 text-gray-600'
                             }`}
                     >
                         {f.label} ({f.count})
@@ -209,8 +209,8 @@ export default function Pedidos() {
                                                     key={est}
                                                     onClick={() => cambiarEstado(p.id, est)}
                                                     className={`px-3 py-1 rounded-lg text-xs font-bold ${p.estado === est
-                                                            ? 'bg-blue-900 text-white'
-                                                            : 'bg-white border text-gray-600 hover:bg-gray-100'
+                                                        ? 'bg-blue-900 text-white'
+                                                        : 'bg-white border text-gray-600 hover:bg-gray-100'
                                                         }`}
                                                 >
                                                     {est}

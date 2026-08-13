@@ -46,7 +46,7 @@ export default function VerStock() {
         }
     }
 
-    async function toggleActivo(productoId, activo) {
+    /*async function toggleActivo(productoId, activo) {
         const { error } = await supabase
             .from('productos')
             .update({ activo: !activo })
@@ -55,7 +55,7 @@ export default function VerStock() {
         if (!error) {
             setProductos(productos.filter(p => p.id !== productoId))
         }
-    }
+    }*/
 
     const productosFiltrados = productos.filter(p => {
         const coincideBusqueda =
@@ -116,8 +116,8 @@ export default function VerStock() {
                         key={f.key}
                         onClick={() => setFiltroStock(f.key)}
                         className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${filtroStock === f.key
-                                ? 'bg-blue-900 text-white'
-                                : 'bg-gray-100 text-gray-600'
+                            ? 'bg-blue-900 text-white'
+                            : 'bg-gray-100 text-gray-600'
                             }`}
                     >
                         {f.label} ({f.count})
@@ -138,7 +138,7 @@ export default function VerStock() {
                     <div
                         key={p.id}
                         className={`bg-white border rounded-xl p-4 shadow-sm ${p.stock === 0 ? 'border-red-300 bg-red-50' :
-                                p.stock <= 2 ? 'border-amber-300 bg-amber-50' : ''
+                            p.stock <= 2 ? 'border-amber-300 bg-amber-50' : ''
                             }`}
                     >
                         <div className="flex justify-between items-start mb-2">
