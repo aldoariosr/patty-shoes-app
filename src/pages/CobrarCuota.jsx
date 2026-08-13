@@ -139,16 +139,6 @@ export default function CobrarCuota() {
         const atrasadas = calcularCuotasAtrasadas(pedido, pagos || [])
         setCuotasAtrasadas(atrasadas)
 
-        // Calcular siguiente cuota a pagar (la más antigua atrasada, o la siguiente en orden)
-        /*const cuotasPagadasNums = (pagos || []).map(p => p.cuota_numero)
-        let siguienteCuota = 1
-        for (let i = 1; i <= pedido.num_cuotas; i++) {
-            if (!cuotasPagadasNums.includes(i)) {
-                siguienteCuota = i
-                break
-            }
-        }*/
-
         const saldoRestante = pedido.saldo
         const cuotasRestantes = pedido.num_cuotas - (pagos || []).length
         const montoSugerido = cuotasRestantes > 0 ? Math.ceil(saldoRestante / cuotasRestantes) : saldoRestante
