@@ -6,6 +6,7 @@ import CobrarCuota from './pages/CobrarCuota'
 import VerStock from './pages/VerStock'
 import Pedidos from './pages/Pedidos'
 import Productos from './Productos'
+import EstadoCuenta from './pages/EstadoCuenta'
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
           <Route path="/stock" element={<VerStock />} />
           <Route path="/pedidos" element={<Pedidos />} />
           <Route path="/clientes" element={<Productos />} />
+          <Route path="/estado-cuenta" element={<EstadoCuenta />} />
         </Routes>
         <Navbar />
       </div>

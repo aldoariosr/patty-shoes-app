@@ -128,6 +128,12 @@ export default function Dashboard() {
                 >
                     💰 Cobrar Cuota
                 </a>
+                <a
+                    href="/estado-cuenta"
+                    className="block bg-amber-600 text-white rounded-xl p-4 shadow-md text-center font-bold text-lg"
+                >
+                    🧾 Estado de Cuenta
+                </a>
             </div>
         </div>
     )

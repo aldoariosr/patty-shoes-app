@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Search, X, CheckCircle, AlertTriangle, Calendar, DollarSign } from 'lucide-react'
+import { ArrowLeft, Search, X, CheckCircle, AlertTriangle, Calendar, DollarSign, Star } from 'lucide-react'
 
 export default function CobrarCuota() {
     const navigate = useNavigate()
@@ -18,6 +18,13 @@ export default function CobrarCuota() {
 
     const [guardando, setGuardando] = useState(false)
     const [mensajeExito, setMensajeExito] = useState('')
+
+    // Calificación del cliente después de un pago (opcional)
+    const [pedirCalificacion, setPedirCalificacion] = useState(false)
+    const [ultimoPagoId, setUltimoPagoId] = useState(null)
+    const [estrellasSeleccionadas, setEstrellasSeleccionadas] = useState(0)
+    const [comentarioCalificacion, setComentarioCalificacion] = useState('')
+    const [guardandoCalificacion, setGuardandoCalificacion] = useState(false)
 
     const [formPago, setFormPago] = useState({
         cantidad_cuotas_pagar: 1,
@@ -212,8 +219,9 @@ export default function CobrarCuota() {
 
         // Insertar pagos
         const fechaHoy = new Date().toISOString().split('T')[0]
+        let pagoIdParaCalificar = null
         for (const cuota of cuotasAPagar) {
-            await supabase.from('pagos').insert([{
+            const { data: pagoInsertado } = await supabase.from('pagos').insert([{
                 codigo: `PAG-${Date.now()}-${cuota.cuota_numero}`,
                 pedido_id: pedidoSeleccionado.id,
                 cliente_id: clienteSeleccionado.id,
@@ -226,7 +234,8 @@ export default function CobrarCuota() {
                 fecha_pago: fechaHoy,
                 estado: 'Confirmado',
                 notas: cuota.es_atrasada ? `Cuota atrasada. ${formPago.notas}` : formPago.notas,
-            }])
+            }]).select().single()
+            if (pagoInsertado) pagoIdParaCalificar = pagoInsertado.id
         }
 
         // Actualizar pedido
@@ -245,6 +254,29 @@ export default function CobrarCuota() {
         const textoCuotas = cuotasAPagar.map(c => `#${c.cuota_numero}`).join(', ')
         setMensajeExito(`✅ Pagaste cuota(s) ${textoCuotas} por Gs ${montoTotal.toLocaleString()}`)
         setGuardando(false)
+
+        // Paso opcional: calificar cómo fue esta cobranza
+        setUltimoPagoId(pagoIdParaCalificar)
+        setEstrellasSeleccionadas(0)
+        setComentarioCalificacion('')
+        setPedirCalificacion(true)
+    }
+
+    async function guardarCalificacion() {
+        if (!estrellasSeleccionadas || !clienteSeleccionado) return
+        setGuardandoCalificacion(true)
+        await supabase.from('calificaciones_clientes').insert([{
+            cliente_id: clienteSeleccionado.id,
+            pago_id: ultimoPagoId,
+            estrellas: estrellasSeleccionadas,
+            comentario: comentarioCalificacion || null,
+        }])
+        setGuardandoCalificacion(false)
+        setPedirCalificacion(false)
+    }
+
+    function omitirCalificacion() {
+        setPedirCalificacion(false)
     }
 
     return (
@@ -300,6 +332,12 @@ export default function CobrarCuota() {
                         <p className="font-bold text-blue-900 text-sm">{clienteSeleccionado.nombre}</p>
                         <p className="text-xs text-gray-500">{clienteSeleccionado.telefono}</p>
                     </div>
+                    <button
+                        onClick={() => navigate(`/estado-cuenta?cliente=${clienteSeleccionado.id}`)}
+                        className="text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-1.5 rounded-lg whitespace-nowrap"
+                    >
+                        🧾 Estado de Cuenta
+                    </button>
                     <button onClick={() => { setClienteSeleccionado(null); setPedidos([]); setPedidoSeleccionado(null); setBuscarCliente('') }}>
                         <X size={18} className="text-gray-400 hover:text-red-500" />
                     </button>
@@ -436,6 +474,57 @@ export default function CobrarCuota() {
                     {mensajeExito && (
                         <div className="bg-green-100 border border-green-300 text-green-800 rounded-xl p-3 text-sm font-semibold text-center">
                             {mensajeExito}
+                        </div>
+                    )}
+
+                    {/* Calificar la cobranza (opcional, no bloquea el flujo) */}
+                    {pedirCalificacion && (
+                        <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 space-y-3">
+                            <div className="flex justify-between items-start">
+                                <h4 className="font-bold text-amber-900 text-sm">
+                                    ⭐ ¿Cómo fue esta cobranza con {clienteSeleccionado?.nombre}?
+                                </h4>
+                                <button
+                                    type="button"
+                                    onClick={omitirCalificacion}
+                                    className="text-amber-700 text-xs underline"
+                                >
+                                    Omitir
+                                </button>
+                            </div>
+
+                            <div className="flex justify-center gap-1">
+                                {[1, 2, 3, 4, 5].map((n) => (
+                                    <button
+                                        key={n}
+                                        type="button"
+                                        onClick={() => setEstrellasSeleccionadas(n)}
+                                        className="p-1"
+                                    >
+                                        <Star
+                                            size={32}
+                                            className={n <= estrellasSeleccionadas ? 'text-amber-500 fill-amber-500' : 'text-gray-300'}
+                                        />
+                                    </button>
+                                ))}
+                            </div>
+
+                            <textarea
+                                value={comentarioCalificacion}
+                                onChange={(e) => setComentarioCalificacion(e.target.value)}
+                                placeholder="Comentario opcional (ej: pagó puntual, costó contactar, etc.)"
+                                className="w-full p-2.5 border border-amber-300 rounded-lg text-sm"
+                                rows="2"
+                            />
+
+                            <button
+                                type="button"
+                                onClick={guardarCalificacion}
+                                disabled={!estrellasSeleccionadas || guardandoCalificacion}
+                                className="w-full bg-amber-500 text-white font-bold py-2.5 rounded-xl shadow-md disabled:opacity-50"
+                            >
+                                {guardandoCalificacion ? 'Guardando...' : 'Guardar valoración'}
+                            </button>
                         </div>
                     )}
 
