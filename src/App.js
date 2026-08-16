@@ -5,7 +5,6 @@ import NuevaVenta from './pages/NuevaVenta'
 import CobrarCuota from './pages/CobrarCuota'
 import VerStock from './pages/VerStock'
 import Pedidos from './pages/Pedidos'
-import Productos from './Productos'
 import EstadoCuenta from './pages/EstadoCuenta'
 import Clientes from './pages/Clientes'
 
@@ -20,9 +19,8 @@ function App() {
           <Route path="/cobrar-cuota" element={<CobrarCuota />} />
           <Route path="/stock" element={<VerStock />} />
           <Route path="/pedidos" element={<Pedidos />} />
-          <Route path="/clientes" element={<Productos />} />
+          <Route path="/clientes" element={<Clientes />} />
           <Route path="/estado-cuenta" element={<EstadoCuenta />} />
-          <Route path="/cliente" element={<Clientes />} />
         </Routes>
         <Navbar />
       </div>
