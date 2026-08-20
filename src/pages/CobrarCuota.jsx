@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, X, CheckCircle, AlertTriangle, Calendar, DollarSign, Star } from 'lucide-react' // Eliminado CreditCard
 
 export default function CobrarCuota() {
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
+    const clienteIdParam = searchParams.get('cliente')
+    const pedidoIdParam = searchParams.get('pedido')
 
     const [clientes, setClientes] = useState([])
     const [buscarCliente, setBuscarCliente] = useState('')
@@ -55,6 +58,26 @@ export default function CobrarCuota() {
         }
         cargarClientes()
     }, [])
+
+    // Auto-cargar cliente desde los parámetros de la URL (?cliente=...)
+    useEffect(() => {
+        if (clienteIdParam && clientes.length > 0) {
+            const cliente = clientes.find(c => c.id.toString() === clienteIdParam.toString())
+            if (cliente) {
+                cargarPedidosCliente(cliente)
+            }
+        }
+    }, [clienteIdParam, clientes])
+
+    // Auto-seleccionar pedido desde los parámetros de la URL (&pedido=...)
+    useEffect(() => {
+        if (pedidoIdParam && pedidos.length > 0) {
+            const pedido = pedidos.find(p => p.id.toString() === pedidoIdParam.toString())
+            if (pedido) {
+                seleccionarPedido(pedido)
+            }
+        }
+    }, [pedidoIdParam, pedidos])
 
     // Filtrar clientes
     const clientesFiltrados = clientes.filter(c =>
