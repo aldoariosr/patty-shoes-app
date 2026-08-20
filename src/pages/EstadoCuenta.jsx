@@ -19,7 +19,7 @@ export default function EstadoCuenta() {
     const [cargando, setCargando] = useState(false)
     const [descargando, setDescargando] = useState(false)
 
-    // Estado para el acordeón de detalles
+    // Estado para controlar el despliegue de "DETALLES"
     const [mostrarDetalles, setMostrarDetalles] = useState(false)
 
     useEffect(() => {
@@ -74,7 +74,7 @@ export default function EstadoCuenta() {
         setClienteSeleccionado(cliente)
         setBuscarCliente(cliente.nombre)
         setMostrarClientes(false)
-        setMostrarDetalles(false) // Colapsar al cambiar de cliente
+        setMostrarDetalles(false) // Colapsar detalles al cambiar de cliente
         setCargando(true)
 
         const { data: pedidos } = await supabase
@@ -200,7 +200,7 @@ export default function EstadoCuenta() {
             <h1 className="text-2xl font-bold text-blue-900 mb-1">🧾 Estado de Cuenta</h1>
             <p className="text-gray-500 text-sm mb-4">Buscá un cliente para ver el detalle de sus cuentas</p>
 
-            {/* Buscador */}
+            {/* Buscador de cliente */}
             <div className="relative mb-4">
                 <Search size={16} className="absolute left-3 top-3.5 text-gray-400" />
                 <input
@@ -212,7 +212,10 @@ export default function EstadoCuenta() {
                     className="w-full p-3 pl-9 border rounded-lg text-sm"
                 />
                 {clienteSeleccionado && (
-                    <button onClick={limpiarSeleccion} className="absolute right-3 top-3 text-gray-400">
+                    <button
+                        onClick={limpiarSeleccion}
+                        className="absolute right-3 top-3 text-gray-400"
+                    >
                         <X size={18} />
                     </button>
                 )}
@@ -237,7 +240,7 @@ export default function EstadoCuenta() {
 
             {!cargando && clienteSeleccionado && (
                 <>
-                    {/* Tarjeta Resumen (Siempre visible) */}
+                    {/* Tarjeta Resumen del Cliente */}
                     <div className="bg-white border-2 border-blue-900 rounded-2xl p-5 mb-4 shadow-sm">
                         <div className="text-center mb-4 pb-3 border-b-2 border-dashed border-gray-300">
                             <h2 className="text-xl font-bold text-blue-900">PATTY SHOES</h2>
@@ -260,7 +263,7 @@ export default function EstadoCuenta() {
                             <p className="text-2xl font-bold text-red-700">Gs {deudaTotal.toLocaleString()}</p>
                         </div>
 
-                        {/* BOTÓN ACORDEÓN */}
+                        {/* BOTÓN DETALLES (ACORDEÓN) */}
                         <button
                             onClick={() => setMostrarDetalles(!mostrarDetalles)}
                             className="w-full bg-blue-900 hover:bg-blue-800 text-white font-bold py-3 px-4 rounded-xl shadow-md flex items-center justify-between transition-colors"
@@ -273,9 +276,10 @@ export default function EstadoCuenta() {
                         </button>
                     </div>
 
-                    {/* SECCIÓN DESPLEGABLE (Solo visible si mostrarDetalles es true) */}
+                    {/* SECCIÓN DESPLEGABLE DE DETALLES */}
                     {mostrarDetalles && (
                         <div className="animate-fade-in-down">
+                            {/* Recibo — esto es lo que se convierte en imagen */}
                             <div ref={reciboRef} className="bg-white border border-gray-200 rounded-2xl p-5 mb-4">
                                 <div className="text-center mb-4 pb-3 border-b border-gray-200">
                                     <h3 className="text-lg font-bold text-gray-800">Detalle de Cuentas</h3>
@@ -301,6 +305,7 @@ export default function EstadoCuenta() {
                                                     const mensaje = `¿Deseas migrar esta cuenta histórica a la app para poder cobrarla?\n\nProducto: ${c.producto}\nTotal: Gs ${c.total.toLocaleString()}\nSaldo pendiente: Gs ${c.saldo.toLocaleString()}`
                                                     const confirmar = window.confirm(mensaje)
                                                     if (!confirmar) return
+
                                                     try {
                                                         const nuevoPedido = {
                                                             codigo: `PED-HIST-${Date.now()}`,
@@ -315,16 +320,19 @@ export default function EstadoCuenta() {
                                                             num_cuotas: 1,
                                                             notas: 'Migrado desde histórico Excel',
                                                         }
+
                                                         const { data: pedidoCreado, error } = await supabase
                                                             .from('pedidos')
                                                             .insert([nuevoPedido])
                                                             .select()
                                                             .single()
+
                                                         if (error) throw error
-                                                        alert('✅ Cuenta migrada exitosamente.')
+
+                                                        alert('✅ Cuenta migrada exitosamente. Ahora serás redirigido para realizar el cobro.')
                                                         navigate(`/cobrar-cuota?cliente=${clienteSeleccionado.id}&pedido=${pedidoCreado.id}`)
                                                     } catch (err) {
-                                                        alert('Error al migrar: ' + err.message)
+                                                        alert('Error al migrar la cuenta: ' + err.message)
                                                     }
                                                 }
                                             }
@@ -335,8 +343,12 @@ export default function EstadoCuenta() {
                                                     onClick={handleClick}
                                                 >
                                                     <div className="flex justify-between items-start mb-1">
-                                                        <p className="text-sm font-semibold text-gray-800">{i + 1}. {c.producto}</p>
-                                                        <span className="text-[10px] text-gray-400">{c.fecha ? new Date(c.fecha).toLocaleDateString('es-PY') : ''}</span>
+                                                        <p className="text-sm font-semibold text-gray-800">
+                                                            {i + 1}. {c.producto}
+                                                        </p>
+                                                        <span className="text-[10px] text-gray-400">
+                                                            {c.fecha ? new Date(c.fecha).toLocaleDateString('es-PY') : ''}
+                                                        </span>
                                                     </div>
                                                     <div className="flex justify-between text-xs text-gray-600">
                                                         <span>Total: Gs {c.total.toLocaleString()}</span>
@@ -356,7 +368,7 @@ export default function EstadoCuenta() {
                                                         </span>
                                                     </div>
                                                     {tieneSaldo && esCobrarable && (
-                                                        <p className="text-[10px] text-blue-600 mt-1 font-medium">👆 Tocar para cobrar</p>
+                                                        <p className="text-[10px] text-blue-600 mt-1 font-medium">👆 Tocar para cobrar esta cuenta</p>
                                                     )}
                                                 </div>
                                             )
@@ -366,7 +378,9 @@ export default function EstadoCuenta() {
 
                                 <div className="mt-4 pt-3 border-t border-gray-200 flex justify-between items-center">
                                     <span className="font-bold text-gray-700">DEUDA TOTAL</span>
-                                    <span className="text-xl font-bold text-blue-900">Gs {deudaTotal.toLocaleString()}</span>
+                                    <span className="text-xl font-bold text-blue-900">
+                                        Gs {deudaTotal.toLocaleString()}
+                                    </span>
                                 </div>
                             </div>
 
@@ -376,14 +390,16 @@ export default function EstadoCuenta() {
                                     disabled={descargando || cuentas.length === 0}
                                     className="flex-1 bg-blue-900 text-white font-bold py-3 rounded-xl shadow-md flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
                                 >
-                                    <Download size={18} /> {descargando ? 'Generando...' : 'Imagen'}
+                                    <Download size={18} />
+                                    {descargando ? 'Generando...' : 'Imagen'}
                                 </button>
                                 <button
                                     onClick={descargarExcelCliente}
                                     disabled={descargando || cuentas.length === 0}
                                     className="flex-1 bg-green-700 text-white font-bold py-3 rounded-xl shadow-md flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
                                 >
-                                    <FileDown size={18} /> Excel
+                                    <FileDown size={18} />
+                                    Excel
                                 </button>
                             </div>
                         </div>
