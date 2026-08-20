@@ -7,6 +7,7 @@ import VerStock from './pages/VerStock'
 import Pedidos from './pages/Pedidos'
 import EstadoCuenta from './pages/EstadoCuenta'
 import Clientes from './pages/Clientes'
+import ZonaCliente from './pages/ZonaCliente'
 
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
           <Route path="/pedidos" element={<Pedidos />} />
           <Route path="/clientes" element={<Clientes />} />
           <Route path="/estado-cuenta" element={<EstadoCuenta />} />
+          <Route path="/zona-cliente" element={<ZonaCliente />} />
         </Routes>
         <Navbar />
       </div>

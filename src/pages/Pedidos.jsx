@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Search, Package, Clock, DollarSign, Truck, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Search, Package, DollarSign, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 
 export default function Pedidos() {
     const navigate = useNavigate()

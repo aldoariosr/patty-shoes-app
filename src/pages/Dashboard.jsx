@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { User, Download, X, Filter } from 'lucide-react'
+import { User, Download, X } from 'lucide-react'
 import html2canvas from 'html2canvas'
 
 export default function Dashboard() {
@@ -11,34 +11,34 @@ export default function Dashboard() {
     const modalRef = useRef()
 
     useEffect(() => {
-        cargarPagosRecientes()
-    }, [filtroFecha])
+        async function cargarPagosRecientes() {
+            let query = supabase
+                .from('pagos')
+                .select(`*, cliente:clientes(nombre)`)
+                .order('fecha_pago', { ascending: false })
+                .limit(50)
 
-    async function cargarPagosRecientes() {
-        let query = supabase
-            .from('pagos')
-            .select(`*, cliente:clientes(nombre)`)
-            .order('fecha_pago', { ascending: false })
-            .limit(50)
+            const hoy = new Date()
+            hoy.setHours(0, 0, 0, 0)
 
-        const hoy = new Date()
-        hoy.setHours(0, 0, 0, 0)
+            if (filtroFecha === 'hoy') {
+                query = query.gte('fecha_pago', hoy.toISOString())
+            } else if (filtroFecha === 'semana') {
+                const hace7Dias = new Date(hoy)
+                hace7Dias.setDate(hoy.getDate() - 7)
+                query = query.gte('fecha_pago', hace7Dias.toISOString())
+            } else if (filtroFecha === 'mes') {
+                const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+                query = query.gte('fecha_pago', inicioMes.toISOString())
+            }
 
-        if (filtroFecha === 'hoy') {
-            query = query.gte('fecha_pago', hoy.toISOString())
-        } else if (filtroFecha === 'semana') {
-            const hace7Dias = new Date(hoy)
-            hace7Dias.setDate(hoy.getDate() - 7)
-            query = query.gte('fecha_pago', hace7Dias.toISOString())
-        } else if (filtroFecha === 'mes') {
-            const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
-            query = query.gte('fecha_pago', inicioMes.toISOString())
+            const { data: pagos } = await query
+            setPagosRecientes(pagos || [])
+            setCargando(false)
         }
 
-        const { data: pagos } = await query
-        setPagosRecientes(pagos || [])
-        setCargando(false)
-    }
+        cargarPagosRecientes()
+    }, [filtroFecha])
 
     async function descargarPagoImagen(pago) {
         try {
