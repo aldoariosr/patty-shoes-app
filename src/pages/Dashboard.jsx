@@ -1,140 +1,304 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { TrendingUp, AlertTriangle, DollarSign, ShoppingBag } from 'lucide-react'
+import { User, Download, X, Filter } from 'lucide-react'
+import html2canvas from 'html2canvas'
 
 export default function Dashboard() {
-    const [stats, setStats] = useState({
-        ventasMes: 0,
-        porCobrar: 0,
-        stockBajo: 0,
-        pedidosMes: 0,
-    })
     const [cargando, setCargando] = useState(true)
+    const [pagosRecientes, setPagosRecientes] = useState([])
+    const [pagoSeleccionado, setPagoSeleccionado] = useState(null)
+    const [filtroFecha, setFiltroFecha] = useState('todos') // todos, hoy, semana, mes
+    const modalRef = useRef()
 
     useEffect(() => {
-        async function cargarStats() {
-            // Ventas del mes
-            const inicioMes = new Date().toISOString().slice(0, 7) + '-01'
-            const { data: ventas } = await supabase
-                .from('pedidos')
-                .select('total_venta')
-                .gte('fecha_pedido', inicioMes)
-                .neq('estado', 'Cancelado')
+        cargarPagosRecientes()
+    }, [filtroFecha])
 
-            // Saldo por cobrar
-            const { data: saldos } = await supabase
-                .from('pedidos')
-                .select('saldo')
-                .neq('estado', 'Cancelado')
+    async function cargarPagosRecientes() {
+        let query = supabase
+            .from('pagos')
+            .select(`*, cliente:clientes(nombre)`)
+            .order('fecha_pago', { ascending: false })
+            .limit(50)
 
-            // Stock bajo
-            const { count: stockBajo } = await supabase
-                .from('productos')
-                .select('*', { count: 'exact', head: true })
-                .lte('stock', 2)
-                .eq('activo', true)
+        const hoy = new Date()
+        hoy.setHours(0, 0, 0, 0)
 
-            // Pedidos del mes
-            const { count: pedidos } = await supabase
-                .from('pedidos')
-                .select('*', { count: 'exact', head: true })
-                .gte('fecha_pedido', inicioMes)
-
-            setStats({
-                ventasMes: ventas?.reduce((a, b) => a + (b.total_venta || 0), 0) || 0,
-                porCobrar: saldos?.reduce((a, b) => a + (b.saldo || 0), 0) || 0,
-                stockBajo: stockBajo || 0,
-                pedidosMes: pedidos || 0,
-            })
-            setCargando(false)
+        if (filtroFecha === 'hoy') {
+            query = query.gte('fecha_pago', hoy.toISOString())
+        } else if (filtroFecha === 'semana') {
+            const hace7Dias = new Date(hoy)
+            hace7Dias.setDate(hoy.getDate() - 7)
+            query = query.gte('fecha_pago', hace7Dias.toISOString())
+        } else if (filtroFecha === 'mes') {
+            const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+            query = query.gte('fecha_pago', inicioMes.toISOString())
         }
 
-        cargarStats()
-    }, [])
+        const { data: pagos } = await query
+        setPagosRecientes(pagos || [])
+        setCargando(false)
+    }
+
+    async function descargarPagoImagen(pago) {
+        try {
+            const element = modalRef.current
+            if (!element) return
+
+            const canvas = await html2canvas(element, {
+                backgroundColor: '#ffffff',
+                scale: 2
+            })
+
+            const imagen = canvas.toDataURL('image/png')
+            const link = document.createElement('a')
+            link.href = imagen
+            link.download = `comprobante_${pago.cliente?.nombre || 'cliente'}_${new Date(pago.fecha_pago).toLocaleDateString('es-PY').replace(/\//g, '-')}.png`
+            link.click()
+
+            alert('✅ Comprobante guardado como imagen')
+        } catch (error) {
+            console.error('Error al guardar imagen:', error)
+            alert('❌ Error al guardar la imagen')
+        }
+    }
+
+    async function descargarExcel() {
+        try {
+            const { data: ventas } = await supabase
+                .from('ventas_historicas')
+                .select(`
+                    id,
+                    fecha_venta,
+                    total_venta,
+                    abono_inicial,
+                    saldo,
+                    estado,
+                    cliente:clientes(nombre),
+                    producto:productos(marca, estilo, talla)
+                `)
+                .order('fecha_venta', { ascending: false })
+
+            if (!ventas || ventas.length === 0) {
+                alert('No hay datos para exportar')
+                return
+            }
+
+            let csvContent = "text/csv;charset=utf-8,"
+            csvContent += "ID,Fecha,Cliente,Producto,Total,Abono,Saldo,Estado\n"
+
+            ventas.forEach(v => {
+                const producto = `${v.producto?.marca || ''} ${v.producto?.estilo || ''} T${v.producto?.talla || ''}`
+                const fecha = new Date(v.fecha_venta).toLocaleDateString('es-PY')
+
+                csvContent += `${v.id},"${fecha}","${v.cliente?.nombre || 'N/A'}","${producto}",${v.total_venta},${v.abono_inicial},${v.saldo},"${v.estado}"\n`
+            })
+
+            const encodedUri = encodeURI(csvContent)
+            const link = document.createElement("a")
+            link.setAttribute("href", encodedUri)
+            link.setAttribute("download", `reporte_ventas_patty_${new Date().toISOString().split('T')[0]}.csv`)
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+
+            alert('✅ Reporte descargado exitosamente')
+        } catch (error) {
+            console.error('Error al exportar:', error)
+            alert('❌ Error al exportar datos')
+        }
+    }
 
     if (cargando) {
         return (
             <div className="flex justify-center items-center h-screen pb-16">
-                <p className="text-gray-500">Cargando...</p>
+                <p className="text-gray-500">Cargando dashboard...</p>
             </div>
         )
     }
 
-    const cards = [
-        {
-            label: 'Ventas del Mes',
-            value: `Gs ${stats.ventasMes.toLocaleString()}`,
-            icon: TrendingUp,
-            color: 'bg-blue-900 text-white',
-        },
-        {
-            label: 'Por Cobrar',
-            value: `Gs ${stats.porCobrar.toLocaleString()}`,
-            icon: DollarSign,
-            color: 'bg-pink-700 text-white',
-        },
-        {
-            label: 'Stock Bajo',
-            value: stats.stockBajo,
-            icon: AlertTriangle,
-            color: 'bg-red-600 text-white',
-        },
-        {
-            label: 'Pedidos',
-            value: stats.pedidosMes,
-            icon: ShoppingBag,
-            color: 'bg-amber-500 text-white',
-        },
-    ]
-
     return (
-        <div className="p-4 pb-20 max-w-md mx-auto">
-            <h1 className="text-2xl font-bold text-blue-900 mb-1 text-center">
-                PATTY SHOES
-            </h1>
-            <p className="text-center text-gray-500 text-sm mb-6">
-                Sistema de Ventas
-            </p>
+        <div className="p-4 pb-20 max-w-md mx-auto bg-gray-50 min-h-screen">
+            {/* Header con Botones Flotantes */}
+            <div className="mb-6 relative pt-2">
+                <a
+                    href="/zona-cliente"
+                    className="absolute left-0 top-2 bg-purple-600 hover:bg-purple-700 text-white rounded-full p-2 shadow-lg transition-transform hover:scale-110 z-10"
+                    title="Zona del Cliente"
+                >
+                    <User size={20} />
+                </a>
 
-            <div className="grid grid-cols-2 gap-3 mb-6">
-                {cards.map((card) => {
-                    const Icon = card.icon
-                    return (
-                        <div
-                            key={card.label}
-                            className={`${card.color} rounded-2xl p-4 shadow-lg`}
-                        >
-                            <Icon size={24} className="mb-2 opacity-80" />
-                            <p className="text-xs opacity-80 font-medium">{card.label}</p>
-                            <p className="text-xl font-bold">{card.value}</p>
-                        </div>
-                    )
-                })}
+                <h1 className="text-2xl font-bold text-blue-900 text-center pt-8">
+                    PATTY SHOES
+                </h1>
+                <p className="text-center text-gray-500 text-sm mt-1">
+                    Sistema de Ventas
+                </p>
+
+                <button
+                    onClick={descargarExcel}
+                    className="absolute right-0 top-2 bg-green-600 hover:bg-green-700 text-white rounded-full p-2 shadow-lg transition-transform hover:scale-110 z-10"
+                    title="Descargar Excel"
+                >
+                    <Download size={20} />
+                </button>
             </div>
 
+            {/* Acciones Rápidas */}
             <h2 className="text-lg font-bold text-gray-800 mb-3">
                 Acciones Rápidas
             </h2>
-            <div className="space-y-3">
+            <div className="space-y-3 mb-6">
                 <a
                     href="/nueva-venta"
-                    className="block bg-blue-900 text-white rounded-xl p-4 shadow-md text-center font-bold text-lg"
+                    className="block bg-blue-900 text-white rounded-xl p-4 shadow-md text-center font-bold text-lg hover:bg-blue-800 transition-colors"
                 >
-                    + Nueva Venta
+                    📝 Registrar Nuevo Pedido
                 </a>
-                <a
-                    href="/cobrar-cuota"
-                    className="block bg-green-600 text-white rounded-xl p-4 shadow-md text-center font-bold text-lg"
-                >
-                    💰 Cobrar Cuota
-                </a>
-                <a
-                    href="/estado-cuenta"
-                    className="block bg-amber-600 text-white rounded-xl p-4 shadow-md text-center font-bold text-lg"
-                >
-                    🧾 Estado de Cuenta
-                </a>
+                <div className="grid grid-cols-2 gap-3">
+                    <a
+                        href="/cobrar-cuota"
+                        className="block bg-green-600 text-white rounded-xl p-4 shadow-md text-center font-bold hover:bg-green-500 transition-colors"
+                    >
+                        💰 Cobrar Cuota
+                    </a>
+                    <a
+                        href="/estado-cuenta"
+                        className="block bg-amber-600 text-white rounded-xl p-4 shadow-md text-center font-bold hover:bg-amber-500 transition-colors"
+                    >
+                        🧾 Estado de Cuenta
+                    </a>
+                </div>
             </div>
+
+            {/* Historial de Pagos Recientes con Filtros */}
+            <div className="flex justify-between items-center mb-3">
+                <h2 className="text-lg font-bold text-gray-800">
+                    📋 Pagos Recientes
+                </h2>
+                <div className="flex gap-1">
+                    {[
+                        { id: 'todos', label: 'Todos' },
+                        { id: 'hoy', label: 'Hoy' },
+                        { id: 'semana', label: 'Semana' },
+                        { id: 'mes', label: 'Mes' }
+                    ].map(f => (
+                        <button
+                            key={f.id}
+                            onClick={() => setFiltroFecha(f.id)}
+                            className={`text-[10px] px-2 py-1 rounded-full font-bold ${filtroFecha === f.id
+                                    ? 'bg-blue-900 text-white'
+                                    : 'bg-gray-200 text-gray-600'
+                                }`}
+                        >
+                            {f.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
+                <div className="max-h-64 overflow-y-auto">
+                    <table className="w-full text-sm">
+                        <thead className="bg-gray-50 border-b sticky top-0">
+                            <tr>
+                                <th className="text-left p-3 font-semibold text-gray-700">Fecha</th>
+                                <th className="text-left p-3 font-semibold text-gray-700">Cliente</th>
+                                <th className="text-right p-3 font-semibold text-gray-700">Monto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {pagosRecientes.length === 0 ? (
+                                <tr>
+                                    <td colSpan={3} className="text-center p-4 text-gray-500">
+                                        No hay pagos en este período
+                                    </td>
+                                </tr>
+                            ) : (
+                                pagosRecientes.map((pago) => (
+                                    <tr
+                                        key={pago.id}
+                                        className="border-b hover:bg-blue-50 cursor-pointer transition-colors"
+                                        onClick={() => setPagoSeleccionado(pago)}
+                                    >
+                                        <td className="p-3 text-gray-600 text-xs">
+                                            {new Date(pago.fecha_pago).toLocaleDateString('es-PY')}
+                                        </td>
+                                        <td className="p-3 font-medium text-gray-900 text-xs">
+                                            {pago.cliente?.nombre || 'Cliente'}
+                                        </td>
+                                        <td className="p-3 text-right font-bold text-green-600 text-xs">
+                                            {pago.monto_pagado?.toLocaleString()}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Modal Comprobante */}
+            {pagoSeleccionado && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm relative shadow-2xl">
+                        <button
+                            onClick={() => setPagoSeleccionado(null)}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+                        >
+                            <X size={24} />
+                        </button>
+
+                        <div ref={modalRef} className="space-y-4 border-2 border-dashed border-gray-200 p-4 rounded-lg bg-white">
+                            <div className="text-center border-b pb-4">
+                                <h3 className="text-xl font-bold text-blue-900">📋 Comprobante de Pago</h3>
+                                <p className="text-xs text-gray-500 mt-1">Patty Shoes - Sistema de Ventas</p>
+                                <p className="text-xs text-gray-400">{new Date().toLocaleDateString('es-PY')}</p>
+                            </div>
+
+                            <div className="space-y-3 text-sm">
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Cliente:</span>
+                                    <span className="font-bold">{pagoSeleccionado.cliente?.nombre || 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Fecha:</span>
+                                    <span className="font-bold">{new Date(pagoSeleccionado.fecha_pago).toLocaleDateString('es-PY')}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Método:</span>
+                                    <span className="font-bold">{pagoSeleccionado.metodo_pago}</span>
+                                </div>
+                                {pagoSeleccionado.referencia && (
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Ref:</span>
+                                        <span className="font-bold">{pagoSeleccionado.referencia}</span>
+                                    </div>
+                                )}
+                                <div className="border-t pt-3 mt-2">
+                                    <div className="flex justify-between items-center">
+                                        <span className="font-bold text-gray-700">Total Pagado:</span>
+                                        <span className="text-xl font-bold text-green-600">Gs {pagoSeleccionado.monto_pagado?.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="text-center text-[10px] text-gray-400 pt-2">
+                                <p>Gracias por su compra</p>
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={() => descargarPagoImagen(pagoSeleccionado)}
+                            className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                        >
+                            <Download size={18} />
+                            Guardar como Imagen
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
