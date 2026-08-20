@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, TrendingUp, DollarSign, AlertTriangle, ShoppingBag, Calendar, BarChart3, X } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts'
+import { ArrowLeft, TrendingUp, DollarSign, AlertTriangle, Calendar, BarChart3, X } from 'lucide-react'
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts'
 
 export default function ZonaCliente() {
     const navigate = useNavigate()
@@ -19,7 +19,6 @@ export default function ZonaCliente() {
 
     // Estados para modales
     const [modalAbierto, setModalAbierto] = useState(null)
-    const [detalleMes, setDetalleMes] = useState(null)
 
     useEffect(() => {
         cargarDatos()
@@ -91,14 +90,12 @@ export default function ZonaCliente() {
         }
     }
 
-    function abrirModalDetalle(tipo, datos = null) {
+    function abrirModalDetalle(tipo) {
         setModalAbierto(tipo)
-        if (datos) setDetalleMes(datos)
     }
 
     function cerrarModal() {
         setModalAbierto(null)
-        setDetalleMes(null)
     }
 
     if (cargando) {
