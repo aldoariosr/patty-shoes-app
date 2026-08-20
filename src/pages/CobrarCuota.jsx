@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Search, X, CheckCircle, AlertTriangle, Calendar, DollarSign, Star } from 'lucide-react' // Eliminado CreditCard
+import { ArrowLeft, Search, X, CheckCircle, AlertTriangle, Calendar, DollarSign, Star, Clock, Users } from 'lucide-react'
 
 export default function CobrarCuota() {
     const navigate = useNavigate()
@@ -18,6 +18,10 @@ export default function CobrarCuota() {
     const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null)
     const [pagosPedido, setPagosPedido] = useState([])
     const [cuotasAtrasadas, setCuotasAtrasadas] = useState([])
+
+    // Lista global de clientes con deudas pendientes (pantalla de inicio)
+    const [cobrosPendientes, setCobrosPendientes] = useState([])
+    const [cargandoPendientes, setCargandoPendientes] = useState(true)
 
     const [guardando, setGuardando] = useState(false)
     const [mensajeExito, setMensajeExito] = useState('')
@@ -50,13 +54,84 @@ export default function CobrarCuota() {
         '3': 'Mensual',
     }
 
-    // Cargar clientes
+    // Cargar clientes para el buscador
     useEffect(() => {
         async function cargarClientes() {
             const { data } = await supabase.from('clientes').select('*').order('nombre')
             setClientes(data || [])
         }
         cargarClientes()
+    }, [])
+
+    // Cargar lista global de cobros pendientes al entrar a la pantalla
+    useEffect(() => {
+        async function cargarCobrosPendientes() {
+            setCargandoPendientes(true)
+            try {
+                // Traer todos los pedidos con saldo pendiente
+                const { data: pedidosPendientes } = await supabase
+                    .from('pedidos')
+                    .select(`*, cliente:clientes(id, nombre, telefono), producto:productos(marca, estilo)`)
+                    .neq('estado', 'Cancelado')
+                    .neq('estado', 'Pagado')
+                    .gt('saldo', 0)
+                    .order('fecha_pedido', { ascending: true })
+
+                const intervalos = { '1': 7, '2': 15, '3': 30 }
+                const hoy = new Date()
+                hoy.setHours(0, 0, 0, 0)
+
+                // Para cada pedido, calcular la fecha del próximo pago
+                const conFechaProximo = await Promise.all((pedidosPendientes || []).map(async (p) => {
+                    let proximoPago = null
+                    let cuotasVencidas = 0
+
+                    if (p.condicion_pago === 'Cuotas') {
+                        const { data: pagos } = await supabase
+                            .from('pagos')
+                            .select('cuota_numero')
+                            .eq('pedido_id', p.id)
+
+                        const pagosNums = (pagos || []).map(pg => pg.cuota_numero)
+                        const diasIntervalo = intervalos[p.tipo_cuota || '3'] || 30
+                        const fechaPedido = new Date(p.fecha_pedido)
+
+                        for (let i = 1; i <= p.num_cuotas; i++) {
+                            if (!pagosNums.includes(i)) {
+                                const fechaVenc = new Date(fechaPedido)
+                                fechaVenc.setDate(fechaVenc.getDate() + (i * diasIntervalo))
+                                fechaVenc.setHours(0, 0, 0, 0)
+                                if (fechaVenc < hoy) {
+                                    cuotasVencidas++
+                                } else if (!proximoPago) {
+                                    proximoPago = fechaVenc
+                                }
+                            }
+                        }
+                        // Si todas están vencidas, el próximo pago es "HOY" (urgente)
+                        if (!proximoPago && cuotasVencidas > 0) proximoPago = new Date(hoy)
+                    } else {
+                        // Contado con saldo pendiente = pago inmediato
+                        proximoPago = new Date(p.fecha_pedido)
+                    }
+
+                    return { ...p, proximoPago, cuotasVencidas }
+                }))
+
+                // Ordenar por fecha del próximo pago (más cercano primero, luego vencidos)
+                conFechaProximo.sort((a, b) => {
+                    if (!a.proximoPago) return 1
+                    if (!b.proximoPago) return -1
+                    return a.proximoPago - b.proximoPago
+                })
+
+                setCobrosPendientes(conFechaProximo)
+            } catch (err) {
+                console.error('Error cargando cobros pendientes:', err)
+            }
+            setCargandoPendientes(false)
+        }
+        cargarCobrosPendientes()
     }, [])
 
     // Auto-cargar cliente desde los parámetros de la URL (?cliente=...)
@@ -314,6 +389,30 @@ export default function CobrarCuota() {
         setPedirCalificacion(false)
     }
 
+    // Helpers de formato para la lista de cobros
+    function formatearFechaProximo(fecha) {
+        if (!fecha) return '—'
+        const hoy = new Date()
+        hoy.setHours(0, 0, 0, 0)
+        const diff = Math.round((fecha - hoy) / (1000 * 60 * 60 * 24))
+        if (diff < 0) return `Vencido hace ${Math.abs(diff)} día${Math.abs(diff) !== 1 ? 's' : ''}`
+        if (diff === 0) return '🔴 Vence HOY'
+        if (diff === 1) return '🟠 Vence MAÑANA'
+        if (diff <= 7) return `🟡 En ${diff} días`
+        return `🟢 ${fecha.toLocaleDateString('es-PY')}`
+    }
+
+    function colorBadgeProximo(fecha) {
+        if (!fecha) return 'bg-gray-100 text-gray-600'
+        const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+        const diff = Math.round((fecha - hoy) / (1000 * 60 * 60 * 24))
+        if (diff < 0) return 'bg-red-100 text-red-700'
+        if (diff === 0) return 'bg-red-100 text-red-700'
+        if (diff <= 3) return 'bg-orange-100 text-orange-700'
+        if (diff <= 7) return 'bg-yellow-100 text-yellow-700'
+        return 'bg-green-100 text-green-700'
+    }
+
     return (
         <div className="p-4 pb-24 max-w-md mx-auto">
             <button onClick={() => navigate('/')} className="flex items-center text-blue-900 font-bold mb-4">
@@ -321,7 +420,70 @@ export default function CobrarCuota() {
             </button>
 
             <h1 className="text-2xl font-bold text-blue-900 mb-1">💰 Cobrar Cuota</h1>
-            <p className="text-gray-500 text-sm mb-6">Registrá los pagos de tus clientes</p>
+            <p className="text-gray-500 text-sm mb-4">Registrá los pagos de tus clientes</p>
+
+            {/* LISTA DE COBROS PENDIENTES (pantalla de inicio sin cliente seleccionado) */}
+            {!clienteSeleccionado && (
+                <div className="mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-bold text-gray-700 flex items-center gap-1">
+                            <Users size={15} /> Pendientes de cobro
+                        </h2>
+                        <span className="text-xs text-gray-400">{cobrosPendientes.length} cliente{cobrosPendientes.length !== 1 ? 's' : ''}</span>
+                    </div>
+
+                    {cargandoPendientes ? (
+                        <div className="text-center py-6 text-gray-400 text-sm">Cargando cobros...</div>
+                    ) : cobrosPendientes.length === 0 ? (
+                        <div className="text-center py-8 bg-green-50 rounded-xl border border-green-100">
+                            <CheckCircle size={36} className="mx-auto mb-2 text-green-500" />
+                            <p className="font-semibold text-green-700">¡Todo al día!</p>
+                            <p className="text-xs text-gray-500 mt-1">No hay cobros pendientes</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {cobrosPendientes.map((p) => (
+                                <button
+                                    key={p.id}
+                                    onClick={() => cargarPedidosCliente(p.cliente)}
+                                    className="w-full text-left bg-white border border-gray-200 rounded-xl p-3 hover:shadow-md hover:border-blue-300 transition-all relative"
+                                >
+                                    {p.cuotasVencidas > 0 && (
+                                        <div className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                            {p.cuotasVencidas} vencida{p.cuotasVencidas !== 1 ? 's' : ''}
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between items-start">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-sm text-gray-900 truncate">{p.cliente?.nombre}</p>
+                                            <p className="text-xs text-gray-500 truncate">{p.producto?.marca} {p.producto?.estilo}</p>
+                                        </div>
+                                        <div className="text-right ml-2 shrink-0">
+                                            <p className="text-sm font-bold text-red-600">Gs {p.saldo.toLocaleString()}</p>
+                                            <p className="text-xs text-gray-400">{p.condicion_pago}</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-2">
+                                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${colorBadgeProximo(p.proximoPago)}`}>
+                                            <Clock size={10} />
+                                            {formatearFechaProximo(p.proximoPago)}
+                                        </span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* SEPARADOR / BÚSQUEDA MANUAL */}
+            {!clienteSeleccionado && (
+                <div className="flex items-center gap-2 mb-4">
+                    <div className="flex-1 border-t border-gray-200" />
+                    <span className="text-xs text-gray-400 whitespace-nowrap">o buscar otro cliente</span>
+                    <div className="flex-1 border-t border-gray-200" />
+                </div>
+            )}
 
             {/* BUSCAR CLIENTE */}
             <div className="relative mb-4">
