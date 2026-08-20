@@ -67,6 +67,7 @@ export default function CobrarCuota() {
                 cargarPedidosCliente(cliente)
             }
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [clienteIdParam, clientes])
 
     // Auto-seleccionar pedido desde los parámetros de la URL (&pedido=...)
@@ -77,6 +78,7 @@ export default function CobrarCuota() {
                 seleccionarPedido(pedido)
             }
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pedidoIdParam, pedidos])
 
     // Filtrar clientes
@@ -132,6 +134,7 @@ export default function CobrarCuota() {
             .select(`*, producto:productos(marca, estilo, talla, color)`)
             .eq('cliente_id', cliente.id)
             .neq('estado', 'Cancelado')
+            .neq('estado', 'Pagado')
             .gt('saldo', 0)
             .order('fecha_pedido', { ascending: false })
 
