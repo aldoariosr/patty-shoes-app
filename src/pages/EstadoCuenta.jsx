@@ -40,23 +40,25 @@ export default function EstadoCuenta() {
 
     async function cargarDeudores() {
         setCargandoDeudores(true)
-        const { data } = await supabase
-            .from('pedidos')
-            .select('saldo, cliente:clientes(id, nombre, telefono)')
-            .gt('saldo', 0)
-            .neq('estado', 'Cancelado')
 
-        const mapa = {}
-        for (const p of data || []) {
-            if (!p.cliente?.id) continue
-            if (!mapa[p.cliente.id]) {
-                mapa[p.cliente.id] = { ...p.cliente, deuda_total: 0, cantidad_cuentas: 0 }
-            }
-            mapa[p.cliente.id].deuda_total += p.saldo || 0
-            mapa[p.cliente.id].cantidad_cuentas += 1
+        // Misma fuente que la pestaña Clientes (incluye deudas históricas del Excel)
+        const { data } = await supabase
+            .from('clientes_resumen')
+            .select('id, nombre, telefono, deuda_total')
+            .gt('deuda_total', 0)
+            .order('deuda_total', { ascending: false })
+
+        // Cantidad de cuentas con saldo por cliente (solo pedidos de la app)
+        const ids = (data || []).map(d => d.id)
+        const { data: saldos } = ids.length > 0
+            ? await supabase.from('pedidos').select('cliente_id').gt('saldo', 0).neq('estado', 'Cancelado').in('cliente_id', ids)
+            : { data: [] }
+        const conteo = {}
+        for (const s of saldos || []) {
+            conteo[s.cliente_id] = (conteo[s.cliente_id] || 0) + 1
         }
 
-        setDeudores(Object.values(mapa).sort((a, b) => b.deuda_total - a.deuda_total))
+        setDeudores((data || []).map(d => ({ ...d, cantidad_cuentas: conteo[d.id] || 0 })))
         setCargandoDeudores(false)
     }
 
@@ -260,7 +262,7 @@ export default function EstadoCuenta() {
                                         <div className="min-w-0">
                                             <p className="font-bold text-sm text-gray-900 truncate">{d.nombre}</p>
                                             <p className="text-xs text-gray-500">
-                                                {d.cantidad_cuentas} cuenta{d.cantidad_cuentas !== 1 ? 's' : ''}{d.telefono ? ` • ${d.telefono}` : ''}
+                                                {d.cantidad_cuentas > 0 && `${d.cantidad_cuentas} cuenta${d.cantidad_cuentas !== 1 ? 's' : ''}${d.telefono ? ' • ' : ''}`}{d.telefono}
                                             </p>
                                         </div>
                                         <span className="text-sm font-bold text-red-600 shrink-0 ml-2">
