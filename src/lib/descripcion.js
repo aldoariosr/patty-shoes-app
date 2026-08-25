@@ -17,3 +17,12 @@ export function descripcionProducto(pedido) {
     const detalle = notas.replace(/^Migrado desde histórico Excel\s*[—–-]*\s*/, '').trim()
     return detalle || 'Producto migrado del Excel'
 }
+
+/**
+ * Etiqueta corta para mostrar donde antes iba el código del pedido.
+ * Los migrados muestran "🧾 Cuenta histórica" en vez de PED-HIST-<uuid>.
+ */
+export function etiquetaPedido(pedido) {
+    if (pedido && (pedido.codigo || '').startsWith('PED-HIST')) return '🧾 Cuenta histórica'
+    return pedido?.codigo || 'Pedido'
+}

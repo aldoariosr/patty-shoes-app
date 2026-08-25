@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { descripcionProducto } from '../lib/descripcion'
+import { descripcionProducto, etiquetaPedido } from '../lib/descripcion'
 import { ArrowLeft, Search, X, CheckCircle, AlertTriangle, Calendar, DollarSign, Star, Clock, Users } from 'lucide-react'
 
 export default function CobrarCuota() {
@@ -611,7 +611,7 @@ export default function CobrarCuota() {
                                 )}
                                 <div className="flex justify-between items-start">
                                     <div>
-                                        <p className="font-bold text-sm text-gray-900">{p.codigo}</p>
+                                        <p className="font-bold text-sm text-gray-900">{etiquetaPedido(p)}</p>
                                         <p className="text-xs text-gray-500">{descripcionProducto(p)}</p>
                                         <p className="text-xs text-gray-400">{new Date(p.fecha_pedido).toLocaleDateString('es-PY')}</p>
                                     </div>
@@ -646,7 +646,7 @@ export default function CobrarCuota() {
                     <div className="bg-white border rounded-xl p-4">
                         <div className="flex justify-between items-start mb-2">
                             <div>
-                                <h3 className="font-bold text-blue-900">{pedidoSeleccionado.codigo}</h3>
+                                <h3 className="font-bold text-blue-900">{etiquetaPedido(pedidoSeleccionado)}</h3>
                                 <p className="text-xs text-gray-500">{descripcionProducto(pedidoSeleccionado)}</p>
                             </div>
                             <button onClick={() => setPedidoSeleccionado(null)} className="text-xs text-gray-500 hover:text-blue-900 underline">

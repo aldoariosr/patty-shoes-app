@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Search, Package, DollarSign, ChevronDown, ChevronUp, X } from 'lucide-react'
-import { descripcionProducto } from '../lib/descripcion'
+import { descripcionProducto, etiquetaPedido } from '../lib/descripcion'
 
 export default function Pedidos() {
     const navigate = useNavigate()
@@ -149,7 +149,7 @@ export default function Pedidos() {
                                 <div className="flex justify-between items-start mb-2">
                                     <div>
                                         <div className="flex items-center gap-2">
-                                            <span className="font-bold text-sm">{p.codigo}</span>
+                                            <span className="font-bold text-sm">{etiquetaPedido(p)}</span>
                                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${p.estado === 'Pendiente' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
                                                 }`}>
                                                 {p.estado}
@@ -222,7 +222,7 @@ export default function Pedidos() {
                         <h3 className="text-lg font-bold text-blue-900 text-center">Pago y Entrega</h3>
 
                         <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm">
-                            <p className="font-bold">{pedidoAProcesar.codigo}</p>
+                            <p className="font-bold">{etiquetaPedido(pedidoAProcesar)}</p>
                             <p className="text-gray-700">{pedidoAProcesar.cliente?.nombre}</p>
                             <div className="mt-2 pt-2 border-t border-blue-100 flex justify-between text-xs">
                                 <span>Total: <strong>Gs {pedidoAProcesar.total_venta?.toLocaleString()}</strong></span>
