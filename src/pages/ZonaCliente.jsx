@@ -37,12 +37,14 @@ export default function ZonaCliente() {
 
             // 2. Obtener datos del mes actual (en tiempo real)
             const hoy = new Date()
-            const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString()
+            // Convertir a ISO preservando la fecha local (evita corrimiento por zona horaria UTC)
+            const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+            const inicioMesISO = new Date(inicioMes.getTime() - inicioMes.getTimezoneOffset() * 60000).toISOString()
 
             const { data: ventasMes } = await supabase
-                .from('ventas_historicas') // O 'pedidos' si usas esa tabla
-                .select('total_venta, costo')
-                .gte('fecha_venta', inicioMes)
+                .from('ventas_historicas')
+                .select('*')
+                .gte('fecha_venta', inicioMesISO)
                 .eq('estado_pedido', 'Pagado')
 
             const { data: porCobrar } = await supabase
@@ -54,11 +56,13 @@ export default function ZonaCliente() {
             const { data: productosBajos } = await supabase
                 .from('productos')
                 .select('stock')
+                .eq('activo', true)
+                .gte('stock', 0)
                 .lt('stock', 5)
 
-            // Calcular totales
-            const totalVentas = ventasMes?.reduce((acc, v) => acc + (v.total_venta || 0), 0) || 0
-            const totalCostos = ventasMes?.reduce((acc, v) => acc + (v.costo || 0), 0) || 0
+            // Compatibilidad con ambos esquemas posibles de la tabla
+            const totalVentas = ventasMes?.reduce((acc, v) => acc + (v.total_venta ?? v.venta ?? 0), 0) || 0
+            const totalCostos = ventasMes?.reduce((acc, v) => acc + (v.costo ?? 0), 0) || 0
             const totalGanancias = totalVentas - totalCostos
             const totalPorCobrar = porCobrar?.reduce((acc, p) => acc + (p.saldo || 0), 0) || 0
             const totalStockBajo = productosBajos?.length || 0

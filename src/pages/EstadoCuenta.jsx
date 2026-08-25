@@ -40,10 +40,12 @@ export default function EstadoCuenta() {
             setClientes([])
             return
         }
+        // Quitar caracteres que rompen la sintaxis del filtro .or() de PostgREST
+        const seguro = texto.replace(/[%(),*]/g, ' ').trim()
         const { data } = await supabase
             .from('clientes')
             .select('*')
-            .or(`nombre.ilike.%${texto}%,telefono.ilike.%${texto}%,codigo.ilike.%${texto}%`)
+            .or(`nombre.ilike.%${seguro}%,telefono.ilike.%${seguro}%,codigo.ilike.%${seguro}%`)
             .order('nombre')
             .limit(20)
         setClientes(data || [])
@@ -126,9 +128,11 @@ export default function EstadoCuenta() {
             estado: v.estado_pedido,
         }))
 
-        const todas = [...cuentasApp, ...cuentasHistorico].sort((a, b) =>
-            new Date(b.fecha || 0) - new Date(a.fecha || 0)
-        )
+        const todas = [...cuentasApp, ...cuentasHistorico].sort((a, b) => {
+            const fa = a.fecha ? new Date(a.fecha).getTime() : 0
+            const fb = b.fecha ? new Date(b.fecha).getTime() : 0
+            return fb - fa
+        })
 
         setCuentas(todas)
         setCargando(false)

@@ -24,7 +24,11 @@ export default function VerStock() {
             .eq('activo', true)
             .order('stock', { ascending: true })
 
-        if (!error) setProductos(data || [])
+        if (!error) {
+            setProductos(data || [])
+        } else {
+            alert('Error al cargar los productos: ' + error.message)
+        }
         setCargando(false)
     }
 
@@ -32,10 +36,17 @@ export default function VerStock() {
         const producto = productos.find(p => p.id === productoId)
         if (!producto) return
 
-        const stockNuevo = Math.max(0, Number(cantidad))
+        // Validar entrada vacía o no numérica antes de guardar
+        const parsed = Number(cantidad)
+        if (cantidad === '' || cantidad === null || isNaN(parsed) || parsed < 0) {
+            alert('Ingresá un número de stock válido')
+            return
+        }
+
+        const stockNuevo = Math.max(0, Math.floor(parsed))
         const { error } = await supabase
             .from('productos')
-            .update({ stock: stockNuevo, updated_at: new Date().toISOString() })
+            .update({ stock: stockNuevo })
             .eq('id', productoId)
 
         if (!error) {
@@ -59,8 +70,8 @@ export default function VerStock() {
 
     const productosFiltrados = productos.filter(p => {
         const coincideBusqueda =
-            p.marca.toLowerCase().includes(buscar.toLowerCase()) ||
-            p.estilo.toLowerCase().includes(buscar.toLowerCase()) ||
+            p.marca?.toLowerCase().includes(buscar.toLowerCase()) ||
+            p.estilo?.toLowerCase().includes(buscar.toLowerCase()) ||
             p.talla?.includes(buscar) ||
             p.color?.toLowerCase().includes(buscar.toLowerCase()) ||
             p.codigo?.toLowerCase().includes(buscar.toLowerCase())

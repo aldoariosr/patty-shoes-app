@@ -73,14 +73,14 @@ export default function NuevaVenta() {
     }, [])
 
     const clientesFiltrados = clientes.filter(c =>
-        c.nombre.toLowerCase().includes(buscarCliente.toLowerCase()) ||
+        c.nombre?.toLowerCase().includes(buscarCliente.toLowerCase()) ||
         c.telefono?.includes(buscarCliente) ||
         c.codigo?.toLowerCase().includes(buscarCliente.toLowerCase())
     )
 
     const productosFiltrados = productos.filter(p =>
-        p.marca.toLowerCase().includes(buscarProducto.toLowerCase()) ||
-        p.estilo.toLowerCase().includes(buscarProducto.toLowerCase()) ||
+        p.marca?.toLowerCase().includes(buscarProducto.toLowerCase()) ||
+        p.estilo?.toLowerCase().includes(buscarProducto.toLowerCase()) ||
         p.codigo?.toLowerCase().includes(buscarProducto.toLowerCase()) ||
         p.talla?.includes(buscarProducto)
     )
@@ -93,27 +93,55 @@ export default function NuevaVenta() {
         }
         setGuardando(true)
 
-        const totalVenta = Number(form.precio_venta) * Number(form.cantidad)
+        const cantidadNum = Number(form.cantidad)
+        const totalVenta = Number(form.precio_venta) * cantidadNum
         const abono = form.condicion_pago === 'Contado' ? totalVenta : Number(form.abono_inicial)
+        const saldo = Math.max(0, totalVenta - abono)
 
-        // 1. Insertar pedido
-        const { data: pedidoData, error: errorPedido } = await supabase.from('pedidos').insert([
+        // Validar stock disponible leyendo el valor actual en la DB (evita vender sin stock)
+        const { data: prodActual } = await supabase
+            .from('productos')
+            .select('stock')
+            .eq('id', form.producto_id)
+            .single()
+
+        if (!prodActual || prodActual.stock < cantidadNum) {
+            alert('❌ Stock insuficiente para la cantidad solicitada')
+            setGuardando(false)
+            return
+        }
+
+        // 1. Insertar pedido (regenerar código al momento de guardar para evitar colisiones)
+        const { count } = await supabase.from('pedidos').select('*', { count: 'exact', head: true })
+        let codigo = `PED-${String((count || 0) + 1).padStart(3, '0')}`
+
+        const insertarPedido = () => supabase.from('pedidos').insert([
             {
-                codigo: form.codigo,
+                codigo,
                 cliente_id: form.cliente_id,
                 producto_id: form.producto_id,
-                cantidad: Number(form.cantidad),
+                cantidad: cantidadNum,
                 precio_venta: Number(form.precio_venta),
+                total_venta: totalVenta,
+                abono_inicial: abono,
+                saldo,
                 condicion_pago: form.condicion_pago,
                 tipo_cuota: form.tipo_cuota,
                 num_cuotas: Number(form.num_cuotas),
-                abono_inicial: abono,
                 tipo_envio: form.tipo_envio,
                 direccion_envio: form.direccion_envio,
                 estado: form.condicion_pago === 'Contado' ? 'Pagado' : 'Pendiente',
                 notas: form.notas,
             },
         ]).select()
+
+        let { data: pedidoData, error: errorPedido } = await insertarPedido()
+
+        // Si el código colisionó con otro pedido, reintentar con uno único
+        if (errorPedido && errorPedido.code === '23505') {
+            codigo = `PED-${Date.now().toString(36).toUpperCase()}`
+            ;({ data: pedidoData, error: errorPedido } = await insertarPedido())
+        }
 
         if (errorPedido || !pedidoData) {
             alert('❌ Error al guardar pedido: ' + errorPedido?.message)
@@ -124,11 +152,12 @@ export default function NuevaVenta() {
         const pedidoCreado = pedidoData[0]
 
         // 2. Registrar el pago (contado = pago total, cuotas = pago del abono inicial)
+        // cuota_numero 0 = no marca ninguna cuota como pagada (el abono no es una cuota)
         const { error: errorPago } = await supabase.from('pagos').insert([{
             codigo: `PAG-${Date.now()}`,
             pedido_id: pedidoCreado.id,
             cliente_id: form.cliente_id,
-            cuota_numero: 1,
+            cuota_numero: 0,
             total_cuotas: form.condicion_pago === 'Contado' ? 1 : Number(form.num_cuotas),
             monto_cuota: abono,
             monto_pagado: abono,
@@ -141,19 +170,25 @@ export default function NuevaVenta() {
 
         if (errorPago) {
             console.error('Error al registrar pago:', errorPago)
+            alert('⚠️ El pedido se guardó pero hubo un error al registrar el pago inicial: ' + errorPago.message)
         }
 
-        // 3. Actualizar stock
-        const producto = productos.find((p) => p.id === form.producto_id)
-        if (producto) {
-            await supabase.from('productos').update({ stock: producto.stock - Number(form.cantidad) }).eq('id', form.producto_id)
+        // 3. Actualizar stock usando el valor fresco leído de la DB
+        const { error: errorStock } = await supabase
+            .from('productos')
+            .update({ stock: prodActual.stock - cantidadNum })
+            .eq('id', form.producto_id)
+
+        if (errorStock) {
+            console.error('Error al actualizar stock:', errorStock)
+            alert('⚠️ Error al descontar el stock: ' + errorStock.message)
         }
 
         alert(form.condicion_pago === 'Contado'
             ? '✅ Venta de contado guardada exitosamente!'
             : '✅ Pedido a cuotas guardado exitosamente!')
-        navigate('/')
         setGuardando(false)
+        navigate('/')
     }
 
     async function crearCliente(e) {
@@ -318,7 +353,7 @@ export default function NuevaVenta() {
                 {/* TOTAL */}
                 <div className="bg-blue-900 text-white rounded-xl p-4 text-center">
                     <p className="text-xs opacity-80">TOTAL A PAGAR</p>
-                    <p className="text-2xl font-bold">Gs {totalVenta.toLocaleString()}</p>
+                    <p className="text-2xl font-bold">Gs {(totalVenta || 0).toLocaleString()}</p>
                 </div>
 
                 {/* CONDICIÓN DE PAGO */}

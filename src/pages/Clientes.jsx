@@ -31,7 +31,7 @@ export default function Clientes() {
 
     const clientesFiltrados = clientes
         .filter(c =>
-            c.nombre.toLowerCase().includes(buscar.toLowerCase()) ||
+            c.nombre?.toLowerCase().includes(buscar.toLowerCase()) ||
             c.telefono?.includes(buscar) ||
             c.codigo?.toLowerCase().includes(buscar.toLowerCase())
         )
@@ -67,10 +67,20 @@ export default function Clientes() {
         setGuardando(true)
 
         if (clienteEditando) {
-            await supabase.from('clientes').update(form).eq('id', clienteEditando.id)
+            const { error } = await supabase.from('clientes').update(form).eq('id', clienteEditando.id)
+            if (error) {
+                alert('❌ Error al guardar los cambios: ' + error.message)
+                setGuardando(false)
+                return
+            }
         } else {
             const codigo = 'CLI-' + Date.now().toString(36).toUpperCase()
-            await supabase.from('clientes').insert([{ ...form, codigo }])
+            const { error } = await supabase.from('clientes').insert([{ ...form, codigo }])
+            if (error) {
+                alert('❌ Error al crear el cliente: ' + error.message)
+                setGuardando(false)
+                return
+            }
         }
 
         setGuardando(false)
@@ -159,7 +169,7 @@ export default function Clientes() {
                                     <div className="flex items-center gap-0.5 mt-1">
                                         <Star size={12} className="text-amber-500 fill-amber-500" />
                                         <span className="text-xs font-semibold text-gray-600">{c.calificacion_promedio}</span>
-                                        <span className="text-[10px] text-gray-400">({c.calificaciones_cantidad})</span>
+                                        <span className="text-[10px] text-gray-400">({c.calificaciones_cantidad ?? 0})</span>
                                     </div>
                                 )}
                             </div>

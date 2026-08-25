@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Search, Package, DollarSign, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Search, Package, DollarSign, ChevronDown, ChevronUp, X } from 'lucide-react'
 
 export default function Pedidos() {
     const navigate = useNavigate()
@@ -44,11 +44,11 @@ export default function Pedidos() {
         setPedidoAProcesar(pedido)
 
         // Calcular primera cuota si es cuotas sin abono
-        let montoSugerido = pedido.saldo || pedido.total_venta
+        let montoSugerido = pedido.saldo || pedido.total_venta || 0
 
         if (pedido.condicion_pago === 'Cuotas' && (!pedido.abono_inicial || pedido.abono_inicial === 0)) {
             const numCuotas = pedido.num_cuotas || 1
-            montoSugerido = Math.ceil(pedido.total_venta / numCuotas)
+            montoSugerido = Math.ceil((pedido.total_venta || 0) / numCuotas)
         }
 
         setForm({
@@ -69,25 +69,8 @@ export default function Pedidos() {
         const monto = Number(form.monto_pagado)
 
         try {
-            // 1. Registrar pago
-            const { error: errorPago } = await supabase.from('pagos').insert([{
-                codigo: `PAG-${Date.now()}`,
-                pedido_id: pedidoAProcesar.id,
-                cliente_id: pedidoAProcesar.cliente_id,
-                cuota_numero: 1,
-                total_cuotas: pedidoAProcesar.num_cuotas || 1,
-                monto_cuota: monto,
-                monto_pagado: monto,
-                metodo_pago: form.metodo_pago,
-                referencia: form.referencia,
-                fecha_pago: new Date().toISOString().split('T')[0],
-                estado: 'Confirmado',
-                notas: form.notas
-            }])
-
-            if (errorPago) throw errorPago
-
-            // 2. Llamar función SQL para actualizar y generar cuotas
+            // La RPC registra el pago y genera el plan de cuotas (no insertar el pago manualmente
+            // para evitar duplicados: la función ya recibe monto, método, referencia y notas)
             const { error: errorFunc } = await supabase.rpc('procesar_pedido_con_cuotas', {
                 p_pedido_id: pedidoAProcesar.id,
                 p_monto_pago: monto,
@@ -114,7 +97,6 @@ export default function Pedidos() {
     }
 
     const pedidosFiltrados = pedidos.filter(p => {
-        if (p.estado === 'Pagado' || p.estado === 'Cancelado') return false
         if (p.estado !== 'Pendiente') return false
 
         const coincide =
@@ -232,8 +214,8 @@ export default function Pedidos() {
             {mostrarModal && pedidoAProcesar && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4 relative">
-                        <button onClick={() => setMostrarModal(false)} className="absolute top-4 right-4 text-gray-400">
-                            <AlertTriangle size={24} />
+                        <button onClick={() => setMostrarModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                            <X size={24} />
                         </button>
 
                         <h3 className="text-lg font-bold text-blue-900 text-center">Pago y Entrega</h3>

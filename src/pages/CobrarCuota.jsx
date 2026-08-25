@@ -77,6 +77,17 @@ export default function CobrarCuota() {
                     .gt('saldo', 0)
                     .order('fecha_pedido', { ascending: true })
 
+                // Una sola query para todos los pagos de los pedidos (evita N+1)
+                const pedidosIds = (pedidosPendientes || []).map(p => p.id)
+                const { data: todosPagos } = pedidosIds.length > 0
+                    ? await supabase.from('pagos').select('pedido_id, cuota_numero').in('pedido_id', pedidosIds)
+                    : { data: [] }
+                const pagosPorPedido = {}
+                for (const pg of (todosPagos || [])) {
+                    if (!pagosPorPedido[pg.pedido_id]) pagosPorPedido[pg.pedido_id] = []
+                    pagosPorPedido[pg.pedido_id].push(pg)
+                }
+
                 const intervalos = { '1': 7, '2': 15, '3': 30 }
                 const hoy = new Date()
                 hoy.setHours(0, 0, 0, 0)
@@ -87,12 +98,8 @@ export default function CobrarCuota() {
                     let cuotasVencidas = 0
 
                     if (p.condicion_pago === 'Cuotas') {
-                        const { data: pagos } = await supabase
-                            .from('pagos')
-                            .select('cuota_numero')
-                            .eq('pedido_id', p.id)
-
-                        const pagosNums = (pagos || []).map(pg => pg.cuota_numero)
+                        const pagos = pagosPorPedido[p.id] || []
+                        const pagosNums = pagos.map(pg => pg.cuota_numero)
                         const diasIntervalo = intervalos[p.tipo_cuota || '3'] || 30
                         const fechaPedido = new Date(p.fecha_pedido)
 
@@ -158,7 +165,7 @@ export default function CobrarCuota() {
 
     // Filtrar clientes
     const clientesFiltrados = clientes.filter(c =>
-        c.nombre.toLowerCase().includes(buscarCliente.toLowerCase()) ||
+        c.nombre?.toLowerCase().includes(buscarCliente.toLowerCase()) ||
         c.telefono?.includes(buscarCliente) ||
         c.codigo?.toLowerCase().includes(buscarCliente.toLowerCase())
     )
@@ -214,16 +221,22 @@ export default function CobrarCuota() {
             .order('fecha_pedido', { ascending: false })
 
         const pedidosConAtraso = []
+        const pedidosCuotas = (data || []).filter(p => p.condicion_pago === 'Cuotas')
+        const idsCuotas = pedidosCuotas.map(p => p.id)
+        const { data: todosPagos } = idsCuotas.length > 0
+            ? await supabase.from('pagos').select('*').in('pedido_id', idsCuotas).order('cuota_numero', { ascending: true })
+            : { data: [] }
+        const pagosPorPedido = {}
+        for (const pg of (todosPagos || [])) {
+            if (!pagosPorPedido[pg.pedido_id]) pagosPorPedido[pg.pedido_id] = []
+            pagosPorPedido[pg.pedido_id].push(pg)
+        }
+
         for (const pedido of (data || [])) {
             if (pedido.condicion_pago === 'Cuotas') {
-                const { data: pagos } = await supabase
-                    .from('pagos')
-                    .select('*')
-                    .eq('pedido_id', pedido.id)
-                    .order('cuota_numero', { ascending: true })
-
-                const atrasadas = calcularCuotasAtrasadas(pedido, pagos || [])
-                pedidosConAtraso.push({ ...pedido, atrasadas, pagos: pagos || [] })
+                const pagos = pagosPorPedido[pedido.id] || []
+                const atrasadas = calcularCuotasAtrasadas(pedido, pagos)
+                pedidosConAtraso.push({ ...pedido, atrasadas, pagos })
             } else {
                 pedidosConAtraso.push({ ...pedido, atrasadas: [], pagos: [] })
             }
@@ -242,13 +255,15 @@ export default function CobrarCuota() {
             .eq('pedido_id', pedido.id)
             .order('cuota_numero', { ascending: true })
 
-        setPagosPedido(pagos || [])
+        // Excluir el abono inicial (cuota_numero 0) del conteo de cuotas pagadas
+        const pagosDeCuotas = (pagos || []).filter(p => (p.cuota_numero || 0) > 0)
+        setPagosPedido(pagosDeCuotas)
 
-        const atrasadas = calcularCuotasAtrasadas(pedido, pagos || [])
+        const atrasadas = calcularCuotasAtrasadas(pedido, pagosDeCuotas)
         setCuotasAtrasadas(atrasadas)
 
         const saldoRestante = pedido.saldo
-        const cuotasRestantes = pedido.num_cuotas - (pagos || []).length
+        const cuotasRestantes = pedido.num_cuotas - pagosDeCuotas.length
         const montoSugerido = cuotasRestantes > 0 ? Math.ceil(saldoRestante / cuotasRestantes) : saldoRestante
 
         setFormPago({
@@ -348,17 +363,25 @@ export default function CobrarCuota() {
             if (pagoInsertado) pagoIdParaCalificar = pagoInsertado.id
         }
 
-        // Actualizar pedido
-        const nuevoAbono = pedidoSeleccionado.abono_inicial + montoTotal
-        const nuevoEstado = nuevoAbono >= pedidoSeleccionado.total_venta ? 'Pagado' : pedidoSeleccionado.estado
+        // Actualizar pedido (decrementar saldo)
+        const nuevoAbono = (pedidoSeleccionado.abono_inicial || 0) + montoTotal
+        const nuevoSaldo = Math.max(0, pedidoSeleccionado.saldo - montoTotal)
+        const nuevoEstado = nuevoSaldo <= 0 ? 'Pagado' : pedidoSeleccionado.estado
 
-        await supabase
+        const { error: errorUpdate } = await supabase
             .from('pedidos')
-            .update({ abono_inicial: nuevoAbono, estado: nuevoEstado })
+            .update({ abono_inicial: nuevoAbono, saldo: nuevoSaldo, estado: nuevoEstado })
             .eq('id', pedidoSeleccionado.id)
 
+        if (errorUpdate) {
+            console.error('Error al actualizar pedido:', errorUpdate)
+            alert('❌ El pago se guardó pero hubo un error al actualizar el saldo: ' + errorUpdate.message)
+            setGuardando(false)
+            return
+        }
+
         // Recargar
-        const pedidoActualizado = { ...pedidoSeleccionado, abono_inicial: nuevoAbono, estado: nuevoEstado }
+        const pedidoActualizado = { ...pedidoSeleccionado, abono_inicial: nuevoAbono, saldo: nuevoSaldo, estado: nuevoEstado }
         await seleccionarPedido(pedidoActualizado)
 
         const textoCuotas = cuotasAPagar.map(c => `#${c.cuota_numero}`).join(', ')

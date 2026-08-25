@@ -84,8 +84,7 @@ export default function Dashboard() {
                 return
             }
 
-            let csvContent = "text/csv;charset=utf-8,"
-            csvContent += "ID,Fecha,Cliente,Producto,Total,Abono,Saldo,Estado\n"
+            let csvContent = "ID,Fecha,Cliente,Producto,Total,Abono,Saldo,Estado\n"
 
             ventas.forEach(v => {
                 const producto = `${v.producto?.marca || ''} ${v.producto?.estilo || ''} T${v.producto?.talla || ''}`
@@ -94,7 +93,7 @@ export default function Dashboard() {
                 csvContent += `${v.id},"${fecha}","${v.cliente?.nombre || 'N/A'}","${producto}",${v.total_venta},${v.abono_inicial},${v.saldo},"${v.estado}"\n`
             })
 
-            const encodedUri = encodeURI(csvContent)
+            const encodedUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\uFEFF' + csvContent)
             const link = document.createElement("a")
             link.setAttribute("href", encodedUri)
             link.setAttribute("download", `reporte_ventas_patty_${new Date().toISOString().split('T')[0]}.csv`)
