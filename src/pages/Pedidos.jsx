@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Search, Package, DollarSign, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { descripcionProducto } from '../lib/descripcion'
 
 export default function Pedidos() {
     const navigate = useNavigate()
@@ -166,7 +167,7 @@ export default function Pedidos() {
                                     </div>
                                 </div>
                                 <p className="text-sm text-gray-700 truncate">
-                                    {p.producto?.marca} {p.producto?.estilo} • Talla {p.producto?.talla}
+                                    {descripcionProducto(p)}
                                 </p>
                                 <div className="flex justify-center mt-2">
                                     {expandido === p.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}

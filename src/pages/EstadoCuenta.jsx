@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { calcularDeudasPorCliente } from '../lib/deudas'
+import { descripcionProducto } from '../lib/descripcion'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, Download, Package, X, FileDown, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
 import html2canvas from 'html2canvas'
@@ -121,7 +122,7 @@ export default function EstadoCuenta() {
                 fuente: 'app',
                 fecha: p.fecha_pedido,
                 producto: [p.producto?.marca, p.producto?.estilo, p.producto?.talla ? `Talla ${p.producto.talla}` : null]
-                    .filter(Boolean).join(' • ') || 'Producto',
+                    .filter(Boolean).join(' • ') || descripcionProducto(p),
                 total: p.total_venta || 0,
                 saldo: p.saldo || 0,
                 pagado: (p.total_venta || 0) - (p.saldo || 0),
@@ -267,7 +268,7 @@ export default function EstadoCuenta() {
                         condicion_pago: 'Contado',
                         tipo_cuota: '3',
                         num_cuotas: 1,
-                        notas: 'Migrado desde histórico Excel',
+                        notas: `Migrado desde histórico Excel — ${c.producto}`,
                     }])
 
                 if (error) throw error
@@ -467,7 +468,7 @@ export default function EstadoCuenta() {
                                                             condicion_pago: 'Contado',
                                                             tipo_cuota: '3',
                                                             num_cuotas: 1,
-                                                            notas: 'Migrado desde histórico Excel',
+                                                            notas: `Migrado desde histórico Excel — ${c.producto}`,
                                                         }
 
                                                         const { data: pedidoCreado, error } = await supabase

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { descripcionProducto } from '../lib/descripcion'
 import { ArrowLeft, Search, X, CheckCircle, AlertTriangle, Calendar, DollarSign, Star, Clock, Users } from 'lucide-react'
 
 export default function CobrarCuota() {
@@ -500,7 +501,7 @@ export default function CobrarCuota() {
                                     <div className="flex justify-between items-start">
                                         <div className="flex-1 min-w-0">
                                             <p className="font-bold text-sm text-gray-900 truncate">{p.cliente?.nombre}</p>
-                                            <p className="text-xs text-gray-500 truncate">{p.producto?.marca} {p.producto?.estilo}</p>
+                                            <p className="text-xs text-gray-500 truncate">{descripcionProducto(p)}</p>
                                         </div>
                                         <div className="text-right ml-2 shrink-0">
                                             <p className="text-sm font-bold text-red-600">Gs {p.saldo.toLocaleString()}</p>
@@ -611,7 +612,7 @@ export default function CobrarCuota() {
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <p className="font-bold text-sm text-gray-900">{p.codigo}</p>
-                                        <p className="text-xs text-gray-500">{p.producto?.marca} {p.producto?.estilo}</p>
+                                        <p className="text-xs text-gray-500">{descripcionProducto(p)}</p>
                                         <p className="text-xs text-gray-400">{new Date(p.fecha_pedido).toLocaleDateString('es-PY')}</p>
                                     </div>
                                     <div className="text-right">
@@ -646,7 +647,7 @@ export default function CobrarCuota() {
                         <div className="flex justify-between items-start mb-2">
                             <div>
                                 <h3 className="font-bold text-blue-900">{pedidoSeleccionado.codigo}</h3>
-                                <p className="text-xs text-gray-500">{pedidoSeleccionado.producto?.marca} {pedidoSeleccionado.producto?.estilo}</p>
+                                <p className="text-xs text-gray-500">{descripcionProducto(pedidoSeleccionado)}</p>
                             </div>
                             <button onClick={() => setPedidoSeleccionado(null)} className="text-xs text-gray-500 hover:text-blue-900 underline">
                                 Cambiar
