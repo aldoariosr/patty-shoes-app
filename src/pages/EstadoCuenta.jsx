@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { calcularDeudasPorCliente } from '../lib/deudas'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, Download, Package, X, FileDown, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
 import html2canvas from 'html2canvas'
@@ -40,25 +41,9 @@ export default function EstadoCuenta() {
 
     async function cargarDeudores() {
         setCargandoDeudores(true)
-
-        // Misma fuente que la pestaña Clientes (incluye deudas históricas del Excel)
-        const { data } = await supabase
-            .from('clientes_resumen')
-            .select('id, nombre, telefono, deuda_total')
-            .gt('deuda_total', 0)
-            .order('deuda_total', { ascending: false })
-
-        // Cantidad de cuentas con saldo por cliente (solo pedidos de la app)
-        const ids = (data || []).map(d => d.id)
-        const { data: saldos } = ids.length > 0
-            ? await supabase.from('pedidos').select('cliente_id').gt('saldo', 0).neq('estado', 'Cancelado').in('cliente_id', ids)
-            : { data: [] }
-        const conteo = {}
-        for (const s of saldos || []) {
-            conteo[s.cliente_id] = (conteo[s.cliente_id] || 0) + 1
-        }
-
-        setDeudores((data || []).map(d => ({ ...d, cantidad_cuentas: conteo[d.id] || 0 })))
+        // Cálculo centralizado (misma fuente que la pestaña Clientes)
+        const deudas = await calcularDeudasPorCliente()
+        setDeudores(Object.values(deudas).sort((a, b) => b.deuda_total - a.deuda_total))
         setCargandoDeudores(false)
     }
 

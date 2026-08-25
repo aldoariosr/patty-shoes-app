@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { calcularDeudasPorCliente } from '../lib/deudas'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Search, Plus, X, Star, MessageCircle, FileText, Pencil } from 'lucide-react'
 
@@ -21,11 +22,19 @@ export default function Clientes() {
 
     async function cargarClientes() {
         setCargando(true)
-        const { data, error } = await supabase
-            .from('clientes_resumen')
-            .select('*')
-            .order('nombre')
-        if (!error) setClientes(data || [])
+        const [{ data, error }, deudas] = await Promise.all([
+            supabase.from('clientes_resumen').select('*').order('nombre'),
+            calcularDeudasPorCliente(),
+        ])
+        if (!error) {
+            // Sobrescribir deuda_total con el cálculo centralizado
+            // (la vista puede contar doble las históricas ya migradas)
+            setClientes((data || []).map(c => ({
+                ...c,
+                deuda_total: deudas[c.id]?.deuda_total ?? 0,
+                cantidad_cuentas: deudas[c.id]?.cantidad_cuentas ?? 0,
+            })))
+        }
         setCargando(false)
     }
 
