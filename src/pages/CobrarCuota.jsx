@@ -379,12 +379,13 @@ export default function CobrarCuota() {
             }
 
             const nuevoAbonoFallback = (pedidoSeleccionado.abono_inicial || 0) + montoTotal
+            // NOTA: 'saldo' es columna generada en la DB (se calcula sola a partir
+            // de total_venta y abono_inicial) → NUNCA se actualiza directamente.
             const { error: errorUpdate } = await supabase
                 .from('pedidos')
                 .update({
                     abono_inicial: nuevoAbonoFallback,
-                    saldo: Math.max(0, pedidoSeleccionado.saldo - montoTotal),
-                    estado: Math.max(0, pedidoSeleccionado.saldo - montoTotal) <= 0 ? 'Pagado' : pedidoSeleccionado.estado,
+                    estado: nuevoAbonoFallback >= (pedidoSeleccionado.total_venta || 0) ? 'Pagado' : pedidoSeleccionado.estado,
                 })
                 .eq('id', pedidoSeleccionado.id)
 
