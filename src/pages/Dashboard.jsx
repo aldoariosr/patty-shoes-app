@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { User, Download, X } from 'lucide-react'
+import { User, Download, X, AlertTriangle, ClipboardCopy } from 'lucide-react'
 import html2canvas from 'html2canvas'
 
 export default function Dashboard() {
@@ -9,6 +9,11 @@ export default function Dashboard() {
     const [pagoSeleccionado, setPagoSeleccionado] = useState(null)
     const [filtroFecha, setFiltroFecha] = useState('todos') // todos, hoy, semana, mes
     const modalRef = useRef()
+
+    // Alerta de vencidos para la dueña (no se notifica a los clientes)
+    const [vencidos, setVencidos] = useState({ cantidad: 0, detalle: [] })
+    // Cierre de caja del día
+    const [cierreHoy, setCierreHoy] = useState({ total: 0, porMetodo: {} })
 
     useEffect(() => {
         async function cargarPagosRecientes() {
@@ -39,6 +44,100 @@ export default function Dashboard() {
 
         cargarPagosRecientes()
     }, [filtroFecha])
+
+    useEffect(() => {
+        async function cargarAlertas() {
+            try {
+                // 1. Cuotas vencidas (para la dueña)
+                const { data: pedidosCuotas } = await supabase
+                    .from('pedidos')
+                    .select('id, codigo, saldo, total_venta, num_cuotas, tipo_cuota, fecha_pedido, cliente:clientes(nombre, telefono), pagos(cuota_numero)')
+                    .eq('condicion_pago', 'Cuotas')
+                    .neq('estado', 'Cancelado')
+                    .gt('saldo', 0)
+
+                const intervalos = { '1': 7, '2': 15, '3': 30 }
+                const hoy = new Date()
+                hoy.setHours(0, 0, 0, 0)
+
+                const detalle = []
+                for (const p of pedidosCuotas || []) {
+                    const pagadasNums = (p.pagos || []).map(pg => pg.cuota_numero)
+                    const dias = intervalos[p.tipo_cuota || '3'] || 30
+                    const fechaPedido = new Date(p.fecha_pedido)
+                    let vencidas = 0
+
+                    for (let i = 1; i <= (p.num_cuotas || 0); i++) {
+                        if (pagadasNums.includes(i)) continue
+                        const venc = new Date(fechaPedido)
+                        venc.setDate(venc.getDate() + i * dias)
+                        venc.setHours(0, 0, 0, 0)
+                        if (venc < hoy) vencidas++
+                    }
+
+                    if (vencidas > 0) {
+                        detalle.push({
+                            nombre: p.cliente?.nombre || 'Cliente',
+                            telefono: p.cliente?.telefono || '',
+                            vencidas,
+                            saldo: p.saldo || 0,
+                        })
+                    }
+                }
+                setVencidos({
+                    cantidad: detalle.reduce((a, d) => a + d.vencidas, 0),
+                    detalle: detalle.sort((a, b) => b.vencidas - a.vencidas),
+                })
+
+                // 2. Cierre de caja de hoy (por método de pago)
+                const fechaHoy = new Date().toISOString().split('T')[0]
+                const { data: pagosHoy } = await supabase
+                    .from('pagos')
+                    .select('monto_pagado, metodo_pago')
+                    .eq('fecha_pago', fechaHoy)
+
+                const porMetodo = {}
+                let total = 0
+                for (const pg of pagosHoy || []) {
+                    const monto = Number(pg.monto_pagado) || 0
+                    total += monto
+                    porMetodo[pg.metodo_pago] = (porMetodo[pg.metodo_pago] || 0) + monto
+                }
+                setCierreHoy({ total, porMetodo })
+            } catch (err) {
+                console.error('Error cargando alertas:', err)
+            }
+        }
+        cargarAlertas()
+        const interval = setInterval(cargarAlertas, 60000)
+        return () => clearInterval(interval)
+    }, [])
+
+    async function copiarResumenVencidos() {
+        const lineas = [
+            `📋 PATTY SHOES - Cobros pendientes (${new Date().toLocaleDateString('es-PY')})`,
+            '',
+            ...vencidos.detalle.map((d, i) =>
+                `${i + 1}. ${d.nombre}${d.telefono ? ` (${d.telefono})` : ''}: ${d.vencidas} cuota${d.vencidas !== 1 ? 's' : ''} vencida${d.vencidas !== 1 ? 's' : ''} • Saldo: Gs ${d.saldo.toLocaleString()}`
+            ),
+            '',
+            `Total vencido: Gs ${vencidos.detalle.reduce((a, d) => a + d.saldo, 0).toLocaleString()}`,
+        ]
+        const texto = lineas.join('\n')
+        try {
+            await navigator.clipboard.writeText(texto)
+            alert('✅ Resumen copiado. Pegalo donde quieras (WhatsApp, notas, etc.)')
+        } catch {
+            // Fallback para navegadores sin clipboard API
+            const ta = document.createElement('textarea')
+            ta.value = texto
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+            alert('✅ Resumen copiado')
+        }
+    }
 
     async function descargarPagoImagen(pago) {
         try {
@@ -142,6 +241,55 @@ export default function Dashboard() {
                 >
                     <Download size={20} />
                 </button>
+            </div>
+
+            {/* Banner de cuotas vencidas (solo para la dueña) */}
+            {vencidos.cantidad > 0 && (
+                <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 mb-6">
+                    <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle size={18} className="text-red-600" />
+                        <h3 className="font-bold text-red-700 text-sm">
+                            ⏰ {vencidos.cantidad} cuota{vencidos.cantidad !== 1 ? 's' : ''} vencida{vencidos.cantidad !== 1 ? 's' : ''} de {vencidos.detalle.length} cliente{vencidos.detalle.length !== 1 ? 's' : ''}
+                        </h3>
+                    </div>
+                    <div className="space-y-1 mb-3 max-h-32 overflow-y-auto">
+                        {vencidos.detalle.slice(0, 5).map((d, i) => (
+                            <p key={i} className="text-xs text-red-600">
+                                • <span className="font-semibold">{d.nombre}</span>: {d.vencidas} vencida{d.vencidas !== 1 ? 's' : ''} — Gs {d.saldo.toLocaleString()}
+                            </p>
+                        ))}
+                        {vencidos.detalle.length > 5 && (
+                            <p className="text-xs text-red-400 italic">...y {vencidos.detalle.length - 5} más</p>
+                        )}
+                    </div>
+                    <div className="flex gap-2">
+                        <a
+                            href="/cobrar-cuota"
+                            className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2.5 px-3 rounded-lg text-center"
+                        >
+                            Ir a Cobrar
+                        </a>
+                        <button
+                            onClick={copiarResumenVencidos}
+                            className="flex-1 bg-white border border-red-300 text-red-700 hover:bg-red-100 text-xs font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-1"
+                        >
+                            <ClipboardCopy size={13} /> Copiar resumen
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Cierre de caja del día */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center justify-between">
+                <div>
+                    <p className="text-xs text-blue-600 font-bold uppercase">💰 Cierre de hoy</p>
+                    <p className="text-xl font-bold text-blue-900">Gs {cierreHoy.total.toLocaleString()}</p>
+                    {Object.keys(cierreHoy.porMetodo).length > 0 && (
+                        <p className="text-[10px] text-gray-500 mt-0.5">
+                            {Object.entries(cierreHoy.porMetodo).map(([m, t]) => `${m}: Gs ${t.toLocaleString()}`).join(' • ')}
+                        </p>
+                    )}
+                </div>
             </div>
 
             {/* Acciones Rápidas */}

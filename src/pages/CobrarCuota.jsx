@@ -333,55 +333,76 @@ export default function CobrarCuota() {
             }
         }
 
-        // Insertar pagos
-        const fechaHoy = new Date().toISOString().split('T')[0]
+        // Insertar pagos + actualizar saldo en UNA transacción atómica (RPC en Supabase)
+        // Si la RPC no está creada todavía (sql/02_rpc_registrar_pago.sql), cae al método anterior
         let pagoIdParaCalificar = null
-        
-        // Nota: Asegúrate de que la tabla 'pagos' tenga estas columnas o ajusta según tu DB real
-        for (const cuota of cuotasAPagar) {
-            const { data: pagoInsertado, error } = await supabase.from('pagos').insert([{
-                codigo: `PAG-${Date.now()}-${cuota.cuota_numero}`,
-                pedido_id: pedidoSeleccionado.id,
-                cliente_id: clienteSeleccionado.id,
-                cuota_numero: cuota.cuota_numero,
-                total_cuotas: pedidoSeleccionado.num_cuotas,
-                monto_cuota: cuota.monto,
-                monto_pagado: cuota.monto,
-                metodo_pago: formPago.metodo_pago,
-                referencia: formPago.referencia,
-                fecha_pago: fechaHoy,
-                estado: 'Confirmado',
-                notas: cuota.es_atrasada ? `Cuota atrasada. ${formPago.notas}` : formPago.notas,
-            }]).select().single()
-            
-            if (error) {
-                console.error("Error al insertar pago:", error);
-                alert("Error al guardar el pago. Verifica la consola.");
-                setGuardando(false);
-                return;
+        const fechaHoy = new Date().toISOString().split('T')[0]
+
+        const { data: rpcId, error: errorRpc } = await supabase.rpc('registrar_pago_cuotas', {
+            p_pedido_id: pedidoSeleccionado.id,
+            p_cliente_id: clienteSeleccionado.id,
+            p_cuotas: cuotasAPagar,
+            p_metodo_pago: formPago.metodo_pago,
+            p_referencia: formPago.referencia || '',
+            p_notas: cuotasAtrasadas.length > 0 ? `Cuota atrasada. ${formPago.notas}`.trim() : formPago.notas,
+        })
+
+        if (!errorRpc) {
+            pagoIdParaCalificar = rpcId
+        } else {
+            // Fallback: flujo anterior paso a paso
+            console.warn('RPC no disponible, usando flujo alternativo:', errorRpc.message)
+            for (const cuota of cuotasAPagar) {
+                const { data: pagoInsertado, error } = await supabase.from('pagos').insert([{
+                    codigo: `PAG-${Date.now()}-${cuota.cuota_numero}`,
+                    pedido_id: pedidoSeleccionado.id,
+                    cliente_id: clienteSeleccionado.id,
+                    cuota_numero: cuota.cuota_numero,
+                    total_cuotas: pedidoSeleccionado.num_cuotas,
+                    monto_cuota: cuota.monto,
+                    monto_pagado: cuota.monto,
+                    metodo_pago: formPago.metodo_pago,
+                    referencia: formPago.referencia,
+                    fecha_pago: fechaHoy,
+                    estado: 'Confirmado',
+                    notas: cuota.es_atrasada ? `Cuota atrasada. ${formPago.notas}` : formPago.notas,
+                }]).select().single()
+
+                if (error) {
+                    console.error("Error al insertar pago:", error);
+                    alert("Error al guardar el pago. Verifica la consola.");
+                    setGuardando(false);
+                    return;
+                }
+                if (pagoInsertado) pagoIdParaCalificar = pagoInsertado.id
             }
-            if (pagoInsertado) pagoIdParaCalificar = pagoInsertado.id
-        }
 
-        // Actualizar pedido (decrementar saldo)
-        const nuevoAbono = (pedidoSeleccionado.abono_inicial || 0) + montoTotal
-        const nuevoSaldo = Math.max(0, pedidoSeleccionado.saldo - montoTotal)
-        const nuevoEstado = nuevoSaldo <= 0 ? 'Pagado' : pedidoSeleccionado.estado
+            const nuevoAbonoFallback = (pedidoSeleccionado.abono_inicial || 0) + montoTotal
+            const { error: errorUpdate } = await supabase
+                .from('pedidos')
+                .update({
+                    abono_inicial: nuevoAbonoFallback,
+                    saldo: Math.max(0, pedidoSeleccionado.saldo - montoTotal),
+                    estado: Math.max(0, pedidoSeleccionado.saldo - montoTotal) <= 0 ? 'Pagado' : pedidoSeleccionado.estado,
+                })
+                .eq('id', pedidoSeleccionado.id)
 
-        const { error: errorUpdate } = await supabase
-            .from('pedidos')
-            .update({ abono_inicial: nuevoAbono, saldo: nuevoSaldo, estado: nuevoEstado })
-            .eq('id', pedidoSeleccionado.id)
-
-        if (errorUpdate) {
-            console.error('Error al actualizar pedido:', errorUpdate)
-            alert('❌ El pago se guardó pero hubo un error al actualizar el saldo: ' + errorUpdate.message)
-            setGuardando(false)
-            return
+            if (errorUpdate) {
+                console.error('Error al actualizar pedido:', errorUpdate)
+                alert('❌ El pago se guardó pero hubo un error al actualizar el saldo: ' + errorUpdate.message)
+                setGuardando(false)
+                return
+            }
         }
 
         // Recargar
-        const pedidoActualizado = { ...pedidoSeleccionado, abono_inicial: nuevoAbono, saldo: nuevoSaldo, estado: nuevoEstado }
+        const nuevoSaldo = Math.max(0, pedidoSeleccionado.saldo - montoTotal)
+        const pedidoActualizado = {
+            ...pedidoSeleccionado,
+            abono_inicial: (pedidoSeleccionado.abono_inicial || 0) + montoTotal,
+            saldo: nuevoSaldo,
+            estado: nuevoSaldo <= 0 ? 'Pagado' : pedidoSeleccionado.estado,
+        }
         await seleccionarPedido(pedidoActualizado)
 
         const textoCuotas = cuotasAPagar.map(c => `#${c.cuota_numero}`).join(', ')

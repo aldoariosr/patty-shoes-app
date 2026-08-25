@@ -227,6 +227,66 @@ export default function EstadoCuenta() {
         setDescargando(false)
     }
 
+    // Migrar todas las cuentas históricas con saldo a pedidos de la app
+    async function migrarTodasHistoricas() {
+        const historicasPendientes = cuentas.filter(c => c.fuente === 'historico' && c.saldo > 0)
+        if (historicasPendientes.length === 0) {
+            alert('No hay cuentas históricas pendientes de migrar')
+            return
+        }
+
+        const confirmar = window.confirm(
+            `¿Migrar ${historicasPendientes.length} cuenta(s) histórica(s) a la app?\n\n` +
+            `Total a migrar: Gs ${historicasPendientes.reduce((a, c) => a + c.saldo, 0).toLocaleString()}`
+        )
+        if (!confirmar) return
+
+        setCargando(true)
+        let creadas = 0
+        let yaExistian = 0
+
+        for (const c of historicasPendientes) {
+            try {
+                const codigoMigrado = `PED-HIST-${c.historicoId}`
+                const { data: existente } = await supabase
+                    .from('pedidos')
+                    .select('id')
+                    .eq('codigo', codigoMigrado)
+                    .maybeSingle()
+
+                if (existente) {
+                    yaExistian++
+                    continue
+                }
+
+                const { error } = await supabase
+                    .from('pedidos')
+                    .insert([{
+                        codigo: codigoMigrado,
+                        cliente_id: clienteSeleccionado.id,
+                        fecha_pedido: c.fecha,
+                        total_venta: c.total,
+                        abono_inicial: c.pagado,
+                        saldo: c.saldo,
+                        estado: 'Pendiente',
+                        condicion_pago: 'Contado',
+                        tipo_cuota: '3',
+                        num_cuotas: 1,
+                        notas: 'Migrado desde histórico Excel',
+                    }])
+
+                if (error) throw error
+                creadas++
+            } catch (err) {
+                console.error('Error migrando cuenta:', c.id, err)
+                alert('Error al migrar una cuenta: ' + err.message)
+            }
+        }
+
+        await seleccionarCliente(clienteSeleccionado)
+        alert(`✅ Migración completada: ${creadas} nueva(s), ${yaExistian} ya existía(n)`)
+    }
+
     return (
         <div className="p-4 pb-24 max-w-md mx-auto">
             <button onClick={() => navigate('/')} className="flex items-center text-blue-900 font-bold mb-4">
@@ -498,6 +558,16 @@ export default function EstadoCuenta() {
                                     Excel
                                 </button>
                             </div>
+
+                            {cuentas.some(c => c.fuente === 'historico' && c.saldo > 0) && (
+                                <button
+                                    onClick={migrarTodasHistoricas}
+                                    disabled={cargando}
+                                    className="w-full mt-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl shadow-md disabled:opacity-50 text-sm"
+                                >
+                                    📥 Migrar cuentas históricas a la app
+                                </button>
+                            )}
                         </div>
                     )}
                 </>

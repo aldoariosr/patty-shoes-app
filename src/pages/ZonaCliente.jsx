@@ -16,6 +16,7 @@ export default function ZonaCliente() {
     })
     const [historial, setHistorial] = useState([])
     const [graficoData, setGraficoData] = useState([])
+    const [ranking, setRanking] = useState([])
 
     // Estados para modales
     const [modalAbierto, setModalAbierto] = useState(null)
@@ -86,6 +87,21 @@ export default function ZonaCliente() {
                 setGraficoData(datosGrafico)
                 setHistorial(auditoria)
             }
+
+            // Ranking de productos más vendidos (pedidos no cancelados)
+            const { data: pedidosRanking } = await supabase
+                .from('pedidos')
+                .select('cantidad, total_venta, producto:productos(marca, estilo, talla)')
+                .neq('estado', 'Cancelado')
+
+            const mapa = {}
+            for (const p of pedidosRanking || []) {
+                const key = `${p.producto?.marca || ''} ${p.producto?.estilo || ''} T${p.producto?.talla || ''}`.trim()
+                if (!mapa[key]) mapa[key] = { producto: key, unidades: 0, facturado: 0 }
+                mapa[key].unidades += p.cantidad || 0
+                mapa[key].facturado += p.total_venta || 0
+            }
+            setRanking(Object.values(mapa).sort((a, b) => b.unidades - a.unidades).slice(0, 10))
 
         } catch (error) {
             console.error("Error cargando datos:", error)
@@ -211,6 +227,14 @@ export default function ZonaCliente() {
                 📅 Ver Histórico Mensual Detallado
             </button>
 
+            {/* Botón Ranking de Productos */}
+            <button
+                onClick={() => abrirModalDetalle('ranking')}
+                className="w-full mt-3 bg-purple-700 text-white font-bold py-3 rounded-xl shadow-md hover:bg-purple-600 transition-colors"
+            >
+                🏆 Ranking de Productos Más Vendidos
+            </button>
+
             {/* MODAL GENÉRICO */}
             {modalAbierto && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -225,6 +249,7 @@ export default function ZonaCliente() {
                             {modalAbierto === 'porCobrar' && '💵 Cuentas por Cobrar'}
                             {modalAbierto === 'stock' && '⚠️ Stock Crítico'}
                             {modalAbierto === 'historico' && '📅 Histórico Mensual'}
+                            {modalAbierto === 'ranking' && '🏆 Productos Más Vendidos'}
                         </h3>
 
                         {/* Contenido dinámico según el modal */}
@@ -261,6 +286,34 @@ export default function ZonaCliente() {
                                 <p className="text-sm text-gray-600">Productos con stock menor a 5 unidades:</p>
                                 <p className="text-3xl font-bold text-red-700">{stats.stockBajo} productos</p>
                                 <p className="text-xs text-red-600 font-medium">¡Atención! Reponer mercadería lo antes posible.</p>
+                            </div>
+                        )}
+
+                        {modalAbierto === 'ranking' && (
+                            <div className="space-y-2">
+                                {ranking.length === 0 ? (
+                                    <p className="text-sm text-gray-500 text-center py-4">Sin ventas registradas aún</p>
+                                ) : (
+                                    ranking.map((r, i) => (
+                                        <div key={i} className="flex items-center justify-between border-b pb-2 last:border-0">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${i === 0 ? 'bg-yellow-400 text-yellow-900' :
+                                                    i === 1 ? 'bg-gray-300 text-gray-700' :
+                                                        i === 2 ? 'bg-orange-300 text-orange-900' : 'bg-gray-100 text-gray-500'
+                                                    }`}>
+                                                    {i + 1}
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-semibold text-gray-800 truncate">{r.producto}</p>
+                                                    <p className="text-xs text-gray-500">{r.unidades} vendido{r.unidades !== 1 ? 's' : ''}</p>
+                                                </div>
+                                            </div>
+                                            <span className="text-xs font-bold text-blue-900 shrink-0 ml-2">
+                                                Gs {r.facturado.toLocaleString()}
+                                            </span>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         )}
 
