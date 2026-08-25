@@ -145,18 +145,28 @@ export default function EstadoCuenta() {
             })
         }
 
-        const cuentasHistorico = (historico || []).map(v => ({
-            id: `hist-${v.id}`,
-            historicoId: v.id,
-            fuente: 'historico',
-            fecha: v.fecha_venta,
-            producto: [v.marca, v.color, v.talle ? `Talla ${v.talle}` : null, v.tipo_producto]
-                .filter(Boolean).join(' • ') || 'Producto (histórico)',
-            total: v.venta || 0,
-            saldo: v.saldo_a_cobrar || 0,
-            pagado: (v.venta || 0) - (v.saldo_a_cobrar || 0),
-            estado: v.estado_pedido,
-        }))
+        // Ocultar históricas que ya fueron migradas (existe PED-HIST-<id> en pedidos)
+        const { data: codigosMigrados } = await supabase
+            .from('pedidos')
+            .select('codigo')
+            .eq('cliente_id', cliente.id)
+            .like('codigo', 'PED-HIST-%')
+        const setMigrados = new Set((codigosMigrados || []).map(p => p.codigo))
+
+        const cuentasHistorico = (historico || [])
+            .filter(v => !setMigrados.has(`PED-HIST-${v.id}`))
+            .map(v => ({
+                id: `hist-${v.id}`,
+                historicoId: v.id,
+                fuente: 'historico',
+                fecha: v.fecha_venta,
+                producto: [v.marca, v.color, v.talle ? `Talla ${v.talle}` : null, v.tipo_producto]
+                    .filter(Boolean).join(' • ') || 'Producto (histórico)',
+                total: v.venta || 0,
+                saldo: v.saldo_a_cobrar || 0,
+                pagado: (v.venta || 0) - (v.saldo_a_cobrar || 0),
+                estado: v.estado_pedido,
+            }))
 
         const todas = [...cuentasApp, ...cuentasHistorico].sort((a, b) => {
             const fa = a.fecha ? new Date(a.fecha).getTime() : 0
