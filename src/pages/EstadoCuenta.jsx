@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { calcularDeudasPorCliente } from '../lib/deudas'
 import { descripcionProducto } from '../lib/descripcion'
+import { parseFecha } from '../lib/fechas'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, Download, Package, X, FileDown, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
 import html2canvas from 'html2canvas'
@@ -145,7 +146,7 @@ export default function EstadoCuenta() {
                 id: `hist-${v.id}`,
                 historicoId: v.id,
                 fuente: 'historico',
-                fecha: v.fecha_venta,
+                fecha: parseFecha(v.fecha_venta)?.toISOString() || null,
                 producto: [v.marca, v.color, v.talle ? `Talla ${v.talle}` : null, v.tipo_producto]
                     .filter(Boolean).join(' • ') || 'Producto (histórico)',
                 total: v.venta || 0,
@@ -260,7 +261,7 @@ export default function EstadoCuenta() {
                     .insert([{
                         codigo: codigoMigrado,
                         cliente_id: clienteSeleccionado.id,
-                        fecha_pedido: c.fecha,
+                        fecha_pedido: parseFecha(c.fecha)?.toISOString() || new Date().toISOString(),
                         precio_venta: c.total,
                         cantidad: 1,
                         abono_inicial: c.pagado,
@@ -460,7 +461,7 @@ export default function EstadoCuenta() {
                                                         const nuevoPedido = {
                                                             codigo: codigoMigrado,
                                                             cliente_id: clienteSeleccionado.id,
-                                                            fecha_pedido: c.fecha,
+                                                            fecha_pedido: parseFecha(c.fecha)?.toISOString() || new Date().toISOString(),
                                                             precio_venta: c.total,
                                                             cantidad: 1,
                                                             abono_inicial: c.pagado,
