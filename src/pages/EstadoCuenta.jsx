@@ -22,7 +22,12 @@ export default function EstadoCuenta() {
     // Estado para controlar el despliegue de "DETALLES"
     const [mostrarDetalles, setMostrarDetalles] = useState(false)
 
+    // Lista de clientes con deuda pendiente (pantalla de inicio)
+    const [deudores, setDeudores] = useState([])
+    const [cargandoDeudores, setCargandoDeudores] = useState(true)
+
     useEffect(() => {
+        cargarDeudores()
         const clienteId = searchParams.get('cliente')
         if (!clienteId) return
         async function cargarClientePorId() {
@@ -32,6 +37,28 @@ export default function EstadoCuenta() {
         cargarClientePorId()
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
+
+    async function cargarDeudores() {
+        setCargandoDeudores(true)
+        const { data } = await supabase
+            .from('pedidos')
+            .select('saldo, cliente:clientes(id, nombre, telefono)')
+            .gt('saldo', 0)
+            .neq('estado', 'Cancelado')
+
+        const mapa = {}
+        for (const p of data || []) {
+            if (!p.cliente?.id) continue
+            if (!mapa[p.cliente.id]) {
+                mapa[p.cliente.id] = { ...p.cliente, deuda_total: 0, cantidad_cuentas: 0 }
+            }
+            mapa[p.cliente.id].deuda_total += p.saldo || 0
+            mapa[p.cliente.id].cantidad_cuentas += 1
+        }
+
+        setDeudores(Object.values(mapa).sort((a, b) => b.deuda_total - a.deuda_total))
+        setCargandoDeudores(false)
+    }
 
     async function buscarClientesInput(texto) {
         setBuscarCliente(texto)
@@ -118,6 +145,7 @@ export default function EstadoCuenta() {
 
         const cuentasHistorico = (historico || []).map(v => ({
             id: `hist-${v.id}`,
+            historicoId: v.id,
             fuente: 'historico',
             fecha: v.fecha_venta,
             producto: [v.marca, v.color, v.talle ? `Talla ${v.talle}` : null, v.tipo_producto]
@@ -142,7 +170,9 @@ export default function EstadoCuenta() {
         setClienteSeleccionado(null)
         setCuentas([])
         setBuscarCliente('')
+        setMostrarClientes(false)
         setMostrarDetalles(false)
+        cargarDeudores()
     }
 
     const deudaTotal = cuentas.reduce((acc, c) => acc + Math.max(0, c.saldo || 0), 0)
@@ -202,7 +232,52 @@ export default function EstadoCuenta() {
             </button>
 
             <h1 className="text-2xl font-bold text-blue-900 mb-1">🧾 Estado de Cuenta</h1>
-            <p className="text-gray-500 text-sm mb-4">Buscá un cliente para ver el detalle de sus cuentas</p>
+            <p className="text-gray-500 text-sm mb-4">Tocá un cliente con deuda o buscá uno manualmente</p>
+
+            {/* LISTA DE CLIENTES CON DEUDA PENDIENTE */}
+            {!clienteSeleccionado && (
+                <div className="mb-6">
+                    {cargandoDeudores ? (
+                        <p className="text-center text-gray-400 text-sm py-4">Cargando deudas...</p>
+                    ) : deudores.length === 0 ? (
+                        <div className="text-center py-8 bg-green-50 rounded-xl border border-green-100">
+                            <Package size={36} className="mx-auto mb-2 text-green-500" />
+                            <p className="font-semibold text-green-700">¡Todo al día!</p>
+                            <p className="text-xs text-gray-500 mt-1">No hay clientes con deuda pendiente</p>
+                        </div>
+                    ) : (
+                        <>
+                            <h2 className="text-sm font-bold text-gray-700 mb-2">
+                                💰 Deudas Pendientes
+                            </h2>
+                            <div className="space-y-2">
+                                {deudores.map((d) => (
+                                    <button
+                                        key={d.id}
+                                        onClick={() => seleccionarCliente(d)}
+                                        className="w-full text-left bg-white border border-red-100 rounded-xl p-3 hover:shadow-md hover:border-red-300 transition-all flex justify-between items-center"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="font-bold text-sm text-gray-900 truncate">{d.nombre}</p>
+                                            <p className="text-xs text-gray-500">
+                                                {d.cantidad_cuentas} cuenta{d.cantidad_cuentas !== 1 ? 's' : ''}{d.telefono ? ` • ${d.telefono}` : ''}
+                                            </p>
+                                        </div>
+                                        <span className="text-sm font-bold text-red-600 shrink-0 ml-2">
+                                            Debe Gs {d.deuda_total.toLocaleString()}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="flex items-center gap-2 mt-5 mb-3">
+                                <div className="flex-1 border-t border-gray-200" />
+                                <span className="text-xs text-gray-400 whitespace-nowrap">o buscar otro cliente</span>
+                                <div className="flex-1 border-t border-gray-200" />
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
 
             {/* Buscador de cliente */}
             <div className="relative mb-4">
@@ -311,8 +386,21 @@ export default function EstadoCuenta() {
                                                     if (!confirmar) return
 
                                                     try {
+                                                        // Código determinístico: si ya fue migrada antes, no duplicar
+                                                        const codigoMigrado = `PED-HIST-${c.historicoId}`
+                                                        const { data: existente } = await supabase
+                                                            .from('pedidos')
+                                                            .select('id')
+                                                            .eq('codigo', codigoMigrado)
+                                                            .maybeSingle()
+
+                                                        if (existente) {
+                                                            navigate(`/cobrar-cuota?cliente=${clienteSeleccionado.id}&pedido=${existente.id}`)
+                                                            return
+                                                        }
+
                                                         const nuevoPedido = {
-                                                            codigo: `PED-HIST-${Date.now()}`,
+                                                            codigo: codigoMigrado,
                                                             cliente_id: clienteSeleccionado.id,
                                                             fecha_pedido: c.fecha,
                                                             total_venta: c.total,
@@ -334,6 +422,8 @@ export default function EstadoCuenta() {
                                                         if (error) throw error
 
                                                         alert('✅ Cuenta migrada exitosamente. Ahora serás redirigido para realizar el cobro.')
+                                                        // Refrescar la lista para que la cuenta migrada ya no aparezca como histórica
+                                                        await seleccionarCliente(clienteSeleccionado)
                                                         navigate(`/cobrar-cuota?cliente=${clienteSeleccionado.id}&pedido=${pedidoCreado.id}`)
                                                     } catch (err) {
                                                         alert('Error al migrar la cuenta: ' + err.message)
