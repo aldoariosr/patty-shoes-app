@@ -25,6 +25,10 @@ export default function EstadoCuenta() {
     // Estado para controlar el despliegue de "DETALLES"
     const [mostrarDetalles, setMostrarDetalles] = useState(false)
 
+    // Completar datos de registros históricos sin monto (Total 0 / "Sin Clasificar")
+    const [editandoHist, setEditandoHist] = useState(null)
+    const [formHist, setFormHist] = useState({ producto: '', total: '' })
+
     // Lista de clientes con deuda pendiente (pantalla de inicio)
     const [deudores, setDeudores] = useState([])
     const [cargandoDeudores, setCargandoDeudores] = useState(true)
@@ -137,11 +141,11 @@ export default function EstadoCuenta() {
             .from('pedidos')
             .select('codigo')
             .eq('cliente_id', cliente.id)
-            .like('codigo', 'PED-HIST-%')
+            .or('codigo.ilike.PED-HIST-%,codigo.ilike.PED-IMP-%')
         const setMigrados = new Set((codigosMigrados || []).map(p => p.codigo))
 
         const cuentasHistorico = (historico || [])
-            .filter(v => !setMigrados.has(`PED-HIST-${v.id}`))
+            .filter(v => !setMigrados.has(`PED-HIST-${v.id}`) && !setMigrados.has(`PED-IMP-${v.id}`))
             .map(v => ({
                 id: `hist-${v.id}`,
                 historicoId: v.id,
@@ -224,6 +228,62 @@ export default function EstadoCuenta() {
         setDescargando(false)
     }
 
+    // Completar un registro histórico sin datos (Total 0) como pedido real.
+    // Queda en la pestaña Pedidos para gestionar entrega y cobro normal.
+    async function guardarEdicionHistorica(e) {
+        e.preventDefault()
+        const totalNum = Number(formHist.total)
+        if (!formHist.producto.trim()) {
+            alert('Ingresá el detalle del producto')
+            return
+        }
+        if (!totalNum || totalNum <= 0) {
+            alert('Ingresá el monto total de la venta')
+            return
+        }
+
+        const codigo = `PED-IMP-${editandoHist.historicoId}`
+        const { data: existente } = await supabase
+            .from('pedidos')
+            .select('id')
+            .eq('codigo', codigo)
+            .maybeSingle()
+
+        if (existente) {
+            alert('Este registro ya fue completado anteriormente')
+            setEditandoHist(null)
+            return
+        }
+
+        setCargando(true)
+        const fecha = editandoHist.fecha || new Date().toISOString()
+        const { error } = await supabase
+            .from('pedidos')
+            .insert([{
+                codigo,
+                cliente_id: clienteSeleccionado.id,
+                fecha_pedido: fecha,
+                precio_venta: totalNum,
+                cantidad: 1,
+                abono_inicial: 0,
+                estado: 'Pendiente',
+                condicion_pago: 'Contado',
+                tipo_cuota: '3',
+                num_cuotas: 1,
+                notas: `Pedido importado del Excel — ${formHist.producto.trim()}`,
+            }])
+        setCargando(false)
+
+        if (error) {
+            alert('Error al guardar: ' + error.message)
+            return
+        }
+
+        setEditandoHist(null)
+        await seleccionarCliente(clienteSeleccionado)
+        alert('✅ Pedido completado. Ya aparece en la pestaña Pedidos para registrar entrega y cobro.')
+    }
+
     // Migrar todas las cuentas históricas con saldo a pedidos de la app
     async function migrarTodasHistoricas() {
         const historicasPendientes = cuentas.filter(c => c.fuente === 'historico' && c.saldo > 0)
@@ -291,54 +351,9 @@ export default function EstadoCuenta() {
             </button>
 
             <h1 className="text-2xl font-bold text-blue-900 mb-1">🧾 Estado de Cuenta</h1>
-            <p className="text-gray-500 text-sm mb-4">Tocá un cliente con deuda o buscá uno manualmente</p>
+            <p className="text-gray-500 text-sm mb-4">Buscá un cliente o tocá uno con deuda pendiente</p>
 
-            {/* LISTA DE CLIENTES CON DEUDA PENDIENTE */}
-            {!clienteSeleccionado && (
-                <div className="mb-6">
-                    {cargandoDeudores ? (
-                        <p className="text-center text-gray-400 text-sm py-4">Cargando deudas...</p>
-                    ) : deudores.length === 0 ? (
-                        <div className="text-center py-8 bg-green-50 rounded-xl border border-green-100">
-                            <Package size={36} className="mx-auto mb-2 text-green-500" />
-                            <p className="font-semibold text-green-700">¡Todo al día!</p>
-                            <p className="text-xs text-gray-500 mt-1">No hay clientes con deuda pendiente</p>
-                        </div>
-                    ) : (
-                        <>
-                            <h2 className="text-sm font-bold text-gray-700 mb-2">
-                                💰 Deudas Pendientes
-                            </h2>
-                            <div className="space-y-2">
-                                {deudores.map((d) => (
-                                    <button
-                                        key={d.id}
-                                        onClick={() => seleccionarCliente(d)}
-                                        className="w-full text-left bg-white border border-red-100 rounded-xl p-3 hover:shadow-md hover:border-red-300 transition-all flex justify-between items-center"
-                                    >
-                                        <div className="min-w-0">
-                                            <p className="font-bold text-sm text-gray-900 truncate">{d.nombre}</p>
-                                            <p className="text-xs text-gray-500">
-                                                {d.cantidad_cuentas > 0 && `${d.cantidad_cuentas} cuenta${d.cantidad_cuentas !== 1 ? 's' : ''}${d.telefono ? ' • ' : ''}`}{d.telefono}
-                                            </p>
-                                        </div>
-                                        <span className="text-sm font-bold text-red-600 shrink-0 ml-2">
-                                            Debe Gs {d.deuda_total.toLocaleString()}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="flex items-center gap-2 mt-5 mb-3">
-                                <div className="flex-1 border-t border-gray-200" />
-                                <span className="text-xs text-gray-400 whitespace-nowrap">o buscar otro cliente</span>
-                                <div className="flex-1 border-t border-gray-200" />
-                            </div>
-                        </>
-                    )}
-                </div>
-            )}
-
-            {/* Buscador de cliente */}
+            {/* Buscador de cliente (arriba, para filtrar rápido) */}
             <div className="relative mb-4">
                 <Search size={16} className="absolute left-3 top-3.5 text-gray-400" />
                 <input
@@ -373,6 +388,52 @@ export default function EstadoCuenta() {
                     </div>
                 )}
             </div>
+
+            {/* LISTA DE CLIENTES CON DEUDA PENDIENTE (filtrada por el buscador) */}
+            {!clienteSeleccionado && (
+                <div className="mb-6">
+                    {cargandoDeudores ? (
+                        <p className="text-center text-gray-400 text-sm py-4">Cargando deudas...</p>
+                    ) : deudores.length === 0 ? (
+                        <div className="text-center py-8 bg-green-50 rounded-xl border border-green-100">
+                            <Package size={36} className="mx-auto mb-2 text-green-500" />
+                            <p className="font-semibold text-green-700">¡Todo al día!</p>
+                            <p className="text-xs text-gray-500 mt-1">No hay clientes con deuda pendiente</p>
+                        </div>
+                    ) : (
+                        <>
+                            <h2 className="text-sm font-bold text-gray-700 mb-2">
+                                💰 Deudas Pendientes
+                            </h2>
+                            <div className="space-y-2">
+                                {deudores
+                                    .filter(d =>
+                                        !buscarCliente.trim() ||
+                                        d.nombre?.toLowerCase().includes(buscarCliente.toLowerCase()) ||
+                                        d.telefono?.includes(buscarCliente)
+                                    )
+                                    .map((d) => (
+                                        <button
+                                            key={d.id}
+                                            onClick={() => seleccionarCliente(d)}
+                                            className="w-full text-left bg-white border border-red-100 rounded-xl p-3 hover:shadow-md hover:border-red-300 transition-all flex justify-between items-center"
+                                        >
+                                            <div className="min-w-0">
+                                                <p className="font-bold text-sm text-gray-900 truncate">{d.nombre}</p>
+                                                <p className="text-xs text-gray-500">
+                                                    {d.cantidad_cuentas > 0 && `${d.cantidad_cuentas} cuenta${d.cantidad_cuentas !== 1 ? 's' : ''}${d.telefono ? ' • ' : ''}`}{d.telefono}
+                                                </p>
+                                            </div>
+                                            <span className="text-sm font-bold text-red-600 shrink-0 ml-2">
+                                                Debe Gs {d.deuda_total.toLocaleString()}
+                                            </span>
+                                        </button>
+                                    ))}
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
 
             {cargando && <p className="text-center text-gray-500 py-8">Cargando cuentas...</p>}
 
@@ -523,6 +584,18 @@ export default function EstadoCuenta() {
                                                     {tieneSaldo && esCobrarable && (
                                                         <p className="text-[10px] text-blue-600 mt-1 font-medium">👆 Tocar para cobrar esta cuenta</p>
                                                     )}
+                                                    {c.fuente === 'historico' && !c.total && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                setEditandoHist(c)
+                                                                setFormHist({ producto: c.producto === 'Producto (histórico)' ? '' : c.producto, total: '' })
+                                                            }}
+                                                            className="w-full mt-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 rounded-lg"
+                                                        >
+                                                            ✏️ Completar datos y pasar a Pedidos
+                                                        </button>
+                                                    )}
                                                 </div>
                                             )
                                         })}
@@ -568,6 +641,64 @@ export default function EstadoCuenta() {
                         </div>
                     )}
                 </>
+            )}
+
+            {/* MODAL: completar registro histórico sin datos */}
+            {editandoHist && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-3">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-bold text-blue-900">✏️ Completar Registro</h3>
+                            <button onClick={() => setEditandoHist(null)}>
+                                <X size={20} className="text-gray-400" />
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                            Este registro vino del Excel sin monto. Completalo para gestionarlo como pedido normal (entrega + cobro).
+                        </p>
+                        <form onSubmit={guardarEdicionHistorica} className="space-y-3">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-1">Producto / Detalle *</label>
+                                <input
+                                    type="text"
+                                    required
+                                    placeholder="Ej: Nike Air • Rojo • Talla 38"
+                                    value={formHist.producto}
+                                    onChange={(e) => setFormHist({ ...formHist, producto: e.target.value })}
+                                    className="w-full p-3 border rounded-lg text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-1">Total de la venta (Gs) *</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    required
+                                    placeholder="Ej: 350000"
+                                    value={formHist.total}
+                                    onChange={(e) => setFormHist({ ...formHist, total: e.target.value })}
+                                    className="w-full p-3 border rounded-lg text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-1">Fecha</label>
+                                <input
+                                    type="text"
+                                    readOnly
+                                    value={editandoHist.fecha ? new Date(editandoHist.fecha).toLocaleDateString('es-PY') : 'Hoy'}
+                                    className="w-full p-3 border rounded-lg bg-gray-100 text-sm text-gray-600"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={cargando}
+                                className="w-full bg-blue-900 text-white font-bold py-3 rounded-xl disabled:opacity-50"
+                            >
+                                {cargando ? 'Guardando...' : '✅ Guardar y pasar a Pedidos'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
             )}
         </div>
     )

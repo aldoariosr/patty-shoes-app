@@ -19,7 +19,8 @@ export default function Pedidos() {
         metodo_pago: 'Efectivo',
         referencia: '',
         marcarEntregado: true,
-        notas: ''
+        notas: '',
+        precio_final: ''
     })
 
     useEffect(() => {
@@ -35,6 +36,7 @@ export default function Pedidos() {
                 cliente:clientes(nombre, telefono),
                 producto:productos(marca, estilo, talla, color)
             `)
+            .not('codigo', 'like', 'PED-HIST-%') // Excluir cuentas históricas migradas (se cobran en Estado de Cuenta / Cobrar Cuota)
             .order('fecha_pedido', { ascending: false })
 
         if (!error) setPedidos(data || [])
@@ -57,7 +59,8 @@ export default function Pedidos() {
             metodo_pago: 'Efectivo',
             referencia: '',
             marcarEntregado: true,
-            notas: 'Pago inicial - Primera cuota'
+            notas: 'Pago inicial - Primera cuota',
+            precio_final: ''
         })
         setMostrarModal(true)
     }
@@ -70,18 +73,36 @@ export default function Pedidos() {
         const monto = Number(form.monto_pagado)
 
         try {
-            // La RPC registra el pago y genera el plan de cuotas (no insertar el pago manualmente
-            // para evitar duplicados: la función ya recibe monto, método, referencia y notas)
+            let pedidoActual = pedidoAProcesar
+
+            // Pedido registrado sin precio: definirlo recién en la entrega
+            if (!pedidoActual.total_venta) {
+                const precioFinal = Number(form.precio_final)
+                if (!precioFinal || precioFinal <= 0) {
+                    alert('Definí el precio de venta del producto')
+                    setProcesando(false)
+                    return
+                }
+                // 'total_venta' y 'saldo' son columnas generadas: se recalculan solas
+                const { error: errorPrecio } = await supabase
+                    .from('pedidos')
+                    .update({ precio_venta: precioFinal })
+                    .eq('id', pedidoActual.id)
+                if (errorPrecio) throw errorPrecio
+                pedidoActual = { ...pedidoActual, total_venta: precioFinal, saldo: precioFinal }
+            }
+
+            // La RPC registra el pago y genera el plan de cuotas
             const { error: errorFunc } = await supabase.rpc('procesar_pedido_con_cuotas', {
-                p_pedido_id: pedidoAProcesar.id,
+                p_pedido_id: pedidoActual.id,
                 p_monto_pago: monto,
                 p_metodo_pago: form.metodo_pago,
                 p_referencia: form.referencia || '',
                 p_notas: form.notas || '',
                 p_es_entrega: form.marcarEntregado,
-                p_tipo_cuota: pedidoAProcesar.condicion_pago === 'Cuotas' ? 'cantidad' : 'ninguna',
+                p_tipo_cuota: pedidoActual.condicion_pago === 'Cuotas' ? 'cantidad' : 'ninguna',
                 p_monto_cuota: 0,
-                p_cantidad_cuotas: pedidoAProcesar.num_cuotas || 1
+                p_cantidad_cuotas: pedidoActual.num_cuotas || 1
             })
 
             if (errorFunc) throw errorFunc
@@ -160,7 +181,7 @@ export default function Pedidos() {
                                         </p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="font-bold text-sm">Gs {p.total_venta?.toLocaleString()}</p>
+                                        <p className="font-bold text-sm">Gs {p.total_venta ? p.total_venta.toLocaleString() : 'Sin definir'}</p>
                                         {p.saldo > 0 && (
                                             <p className="text-xs text-red-500 font-medium">Debe: Gs {p.saldo.toLocaleString()}</p>
                                         )}
@@ -225,12 +246,29 @@ export default function Pedidos() {
                             <p className="font-bold">{etiquetaPedido(pedidoAProcesar)}</p>
                             <p className="text-gray-700">{pedidoAProcesar.cliente?.nombre}</p>
                             <div className="mt-2 pt-2 border-t border-blue-100 flex justify-between text-xs">
-                                <span>Total: <strong>Gs {pedidoAProcesar.total_venta?.toLocaleString()}</strong></span>
+                                <span>Total: <strong>{pedidoAProcesar.total_venta ? `Gs ${pedidoAProcesar.total_venta.toLocaleString()}` : 'Sin definir'}</strong></span>
                                 <span className="text-red-600">Saldo: <strong>Gs {(pedidoAProcesar.saldo || pedidoAProcesar.total_venta)?.toLocaleString()}</strong></span>
                             </div>
                         </div>
 
                         <form onSubmit={procesarPago} className="space-y-3">
+                            {/* Definir precio si el pedido se registró sin él */}
+                            {!pedidoAProcesar.total_venta && (
+                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                    <label className="block text-xs font-bold text-amber-900 mb-1">🏷️ Precio de venta (sin definir)</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        required
+                                        placeholder="Ej: 350000"
+                                        value={form.precio_final}
+                                        onChange={(e) => setForm({ ...form, precio_final: e.target.value })}
+                                        className="w-full p-3 border border-amber-300 rounded-lg text-lg font-bold text-center"
+                                    />
+                                    <p className="text-[10px] text-amber-700 mt-1">Se fijará ahora y no se podrá cambiar después</p>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 mb-1">Monto a Pagar (Gs)</label>
                                 <input

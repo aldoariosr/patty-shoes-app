@@ -14,15 +14,20 @@ export function descripcionProducto(pedido) {
     }
     // Pedido migrado: quitar el prefijo de migración y devolver el detalle
     const notas = pedido.notas || ''
-    const detalle = notas.replace(/^Migrado desde histórico Excel\s*[—–-]*\s*/, '').trim()
+    const detalle = notas
+        .replace(/^(Migrado desde histórico Excel|Pedido importado del Excel)\s*[—–-]*\s*/, '')
+        .trim()
     return detalle || 'Producto migrado del Excel'
 }
 
 /**
  * Etiqueta corta para mostrar donde antes iba el código del pedido.
- * Los migrados muestran "🧾 Cuenta histórica" en vez de PED-HIST-<uuid>.
+ * - PED-HIST-*: cuenta histórica migrada → se cobra desde Estado de Cuenta
+ * - PED-IMP-*: pedido incompleto del Excel completado manualmente → flujo normal
  */
 export function etiquetaPedido(pedido) {
-    if (pedido && (pedido.codigo || '').startsWith('PED-HIST')) return '🧾 Cuenta histórica'
-    return pedido?.codigo || 'Pedido'
+    const cod = pedido?.codigo || ''
+    if (cod.startsWith('PED-HIST')) return '🧾 Cuenta histórica'
+    if (cod.startsWith('PED-IMP')) return '📦 Pedido del Excel'
+    return cod || 'Pedido'
 }

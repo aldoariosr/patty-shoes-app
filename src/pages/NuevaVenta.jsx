@@ -96,7 +96,6 @@ export default function NuevaVenta() {
         const cantidadNum = Number(form.cantidad)
         const totalVenta = Number(form.precio_venta) * cantidadNum
         const abono = form.condicion_pago === 'Contado' ? totalVenta : Number(form.abono_inicial)
-        const saldo = Math.max(0, totalVenta - abono)
 
         // Validar stock disponible leyendo el valor actual en la DB (evita vender sin stock)
         const { data: prodActual } = await supabase
@@ -115,6 +114,8 @@ export default function NuevaVenta() {
         const { count } = await supabase.from('pedidos').select('*', { count: 'exact', head: true })
         let codigo = `PED-${String((count || 0) + 1).padStart(3, '0')}`
 
+        // NOTA: 'total_venta' y 'saldo' son columnas generadas en la DB
+        // (se calculan solas desde precio_venta * cantidad y el abono) → no se insertan
         const insertarPedido = () => supabase.from('pedidos').insert([
             {
                 codigo,
@@ -122,9 +123,7 @@ export default function NuevaVenta() {
                 producto_id: form.producto_id,
                 cantidad: cantidadNum,
                 precio_venta: Number(form.precio_venta),
-                total_venta: totalVenta,
                 abono_inicial: abono,
-                saldo,
                 condicion_pago: form.condicion_pago,
                 tipo_cuota: form.tipo_cuota,
                 num_cuotas: Number(form.num_cuotas),
@@ -342,7 +341,10 @@ export default function NuevaVenta() {
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="block text-sm font-bold text-gray-700 mb-1">Precio Venta (Gs)</label>
-                        <input type="number" required value={form.precio_venta} onChange={(e) => setForm({ ...form, precio_venta: e.target.value })} className="w-full p-3 border rounded-lg" />
+                        <input type="number" min="0" value={form.precio_venta} onChange={(e) => setForm({ ...form, precio_venta: e.target.value })} className="w-full p-3 border rounded-lg" />
+                        {!Number(form.precio_venta) && (
+                            <p className="text-[10px] text-amber-600 mt-1">💡 Sin definir: podrás fijarlo al momento de la entrega</p>
+                        )}
                     </div>
                     <div>
                         <label className="block text-sm font-bold text-gray-700 mb-1">Cantidad</label>
@@ -466,7 +468,7 @@ export default function NuevaVenta() {
                             <input placeholder="Talla" value={nuevoProducto.talla} onChange={e => setNuevoProducto({ ...nuevoProducto, talla: e.target.value })} className="w-full p-3 border rounded-lg" />
                             <input placeholder="Color" value={nuevoProducto.color} onChange={e => setNuevoProducto({ ...nuevoProducto, color: e.target.value })} className="w-full p-3 border rounded-lg" />
                             <div className="grid grid-cols-2 gap-3">
-                                <input placeholder="Precio Venta *" required type="number" value={nuevoProducto.precio_venta} onChange={e => setNuevoProducto({ ...nuevoProducto, precio_venta: e.target.value })} className="w-full p-3 border rounded-lg" />
+                                <input placeholder="Precio Venta (opcional)" type="number" min="0" value={nuevoProducto.precio_venta} onChange={e => setNuevoProducto({ ...nuevoProducto, precio_venta: e.target.value })} className="w-full p-3 border rounded-lg" />
                                 <input placeholder="Stock *" required type="number" value={nuevoProducto.stock} onChange={e => setNuevoProducto({ ...nuevoProducto, stock: e.target.value })} className="w-full p-3 border rounded-lg" />
                             </div>
                             <button type="submit" className="w-full bg-blue-900 text-white font-bold py-3 rounded-xl">Guardar Producto</button>
