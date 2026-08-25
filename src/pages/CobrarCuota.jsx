@@ -468,6 +468,39 @@ export default function CobrarCuota() {
             <h1 className="text-2xl font-bold text-blue-900 mb-1">💰 Cobrar Cuota</h1>
             <p className="text-gray-500 text-sm mb-4">Registrá los pagos de tus clientes</p>
 
+            {/* BUSCAR CLIENTE (arriba, también filtra la lista) */}
+            <div className="relative mb-4">
+                <div className="relative">
+                    <Search size={16} className="absolute left-3 top-3.5 text-gray-400" />
+                    <input
+                        type="text"
+                        placeholder="Filtrar o buscar cliente..."
+                        value={buscarCliente}
+                        onChange={(e) => { setBuscarCliente(e.target.value); setMostrarClientes(true) }}
+                        onFocus={() => setMostrarClientes(true)}
+                        className="w-full p-3 pl-9 border rounded-lg text-sm"
+                    />
+                </div>
+                {mostrarClientes && buscarCliente && (
+                    <div className="absolute z-20 w-full bg-white border rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                        {clientesFiltrados.length === 0 ? (
+                            <div className="p-3 text-sm text-gray-500">No se encontraron clientes</div>
+                        ) : (
+                            clientesFiltrados.map((c) => (
+                                <div
+                                    key={c.id}
+                                    onClick={() => cargarPedidosCliente(c)}
+                                    className="p-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0 text-sm"
+                                >
+                                    <span className="font-semibold">{c.nombre}</span>
+                                    <span className="text-gray-500 ml-2 text-xs">{c.telefono} • {c.ciudad}</span>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                )}
+            </div>
+
             {/* LISTA DE COBROS PENDIENTES (pantalla de inicio sin cliente seleccionado) */}
             {!clienteSeleccionado && (
                 <div className="mb-6">
@@ -488,7 +521,13 @@ export default function CobrarCuota() {
                         </div>
                     ) : (
                         <div className="space-y-2">
-                            {cobrosPendientes.map((p) => (
+                            {cobrosPendientes
+                                .filter(p =>
+                                    !buscarCliente.trim() ||
+                                    p.cliente?.nombre?.toLowerCase().includes(buscarCliente.toLowerCase()) ||
+                                    p.cliente?.telefono?.includes(buscarCliente)
+                                )
+                                .map((p) => (
                                 <button
                                     key={p.id}
                                     onClick={() => cargarPedidosCliente(p.cliente)}
@@ -521,49 +560,6 @@ export default function CobrarCuota() {
                     )}
                 </div>
             )}
-
-            {/* SEPARADOR / BÚSQUEDA MANUAL */}
-            {!clienteSeleccionado && (
-                <div className="flex items-center gap-2 mb-4">
-                    <div className="flex-1 border-t border-gray-200" />
-                    <span className="text-xs text-gray-400 whitespace-nowrap">o buscar otro cliente</span>
-                    <div className="flex-1 border-t border-gray-200" />
-                </div>
-            )}
-
-            {/* BUSCAR CLIENTE */}
-            <div className="relative mb-4">
-                <label className="block text-sm font-bold text-gray-700 mb-1">Buscar Cliente</label>
-                <div className="relative">
-                    <Search size={16} className="absolute left-3 top-3.5 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="Escribí nombre, teléfono o código..."
-                        value={buscarCliente}
-                        onChange={(e) => { setBuscarCliente(e.target.value); setMostrarClientes(true) }}
-                        onFocus={() => setMostrarClientes(true)}
-                        className="w-full p-3 pl-9 border rounded-lg text-sm"
-                    />
-                </div>
-                {mostrarClientes && buscarCliente && (
-                    <div className="absolute z-20 w-full bg-white border rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
-                        {clientesFiltrados.length === 0 ? (
-                            <div className="p-3 text-sm text-gray-500">No se encontraron clientes</div>
-                        ) : (
-                            clientesFiltrados.map((c) => (
-                                <div
-                                    key={c.id}
-                                    onClick={() => cargarPedidosCliente(c)}
-                                    className="p-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0 text-sm"
-                                >
-                                    <span className="font-semibold">{c.nombre}</span>
-                                    <span className="text-gray-500 ml-2 text-xs">{c.telefono} • {c.ciudad}</span>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                )}
-            </div>
 
             {/* CLIENTE SELECCIONADO */}
             {clienteSeleccionado && (
@@ -704,6 +700,9 @@ export default function CobrarCuota() {
                                             <span className="text-green-800 font-medium">Cuota {pago.cuota_numero}/{pago.total_cuotas}</span>
                                             <span className="text-gray-500 text-xs flex items-center gap-1">
                                                 <Calendar size={10} /> {new Date(pago.fecha_pago || pago.created_at).toLocaleDateString('es-PY')}
+                                            </span>
+                                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-semibold">
+                                                💳 {pago.metodo_pago}
                                             </span>
                                         </div>
                                         <span className="font-bold text-green-700">Gs {pago.monto_pagado.toLocaleString()}</span>

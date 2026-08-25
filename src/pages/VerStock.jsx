@@ -11,6 +11,8 @@ export default function VerStock() {
     const [filtroStock, setFiltroStock] = useState('todos') // todos, bajo, agotado
     const [editando, setEditando] = useState(null)
     const [nuevoStock, setNuevoStock] = useState('')
+    const [modalNuevo, setModalNuevo] = useState(false)
+    const [nuevoProd, setNuevoProd] = useState({ marca: '', estilo: '', talla: '', color: '', costo: '', precio_venta: '', stock: '' })
 
     useEffect(() => {
         cargarProductos()
@@ -54,6 +56,45 @@ export default function VerStock() {
             setEditando(null)
         } else {
             alert('Error al actualizar stock: ' + error.message)
+        }
+    }
+
+    async function crearProducto(e) {
+        e.preventDefault()
+        if (!nuevoProd.marca.trim()) {
+            alert('Ingresá la marca del producto')
+            return
+        }
+
+        // Precios opcionales: solo se envían si se cargaron
+        let payload = {
+            codigo: `PRD-${Date.now().toString(36).toUpperCase()}`,
+            marca: nuevoProd.marca.trim(),
+            estilo: nuevoProd.estilo.trim(),
+            talla: nuevoProd.talla,
+            color: nuevoProd.color,
+            precio_venta: Number(nuevoProd.precio_venta) || 0,
+            stock: Number(nuevoProd.stock) || 0,
+            activo: true,
+        }
+        if (nuevoProd.costo !== '' && !isNaN(Number(nuevoProd.costo))) {
+            payload.costo = Number(nuevoProd.costo)
+        }
+
+        let { data, error } = await supabase.from('productos').insert([payload]).select().single()
+
+        // Si la tabla no tiene columna 'costo', reintentar sin ella
+        if (error && /costo/i.test(error.message || '')) {
+            delete payload.costo
+            ;({ data, error } = await supabase.from('productos').insert([payload]).select().single())
+        }
+
+        if (!error && data) {
+            setProductos([data, ...productos])
+            setModalNuevo(false)
+            setNuevoProd({ marca: '', estilo: '', talla: '', color: '', costo: '', precio_venta: '', stock: '' })
+        } else {
+            alert('Error al crear el producto: ' + error?.message)
         }
     }
 
@@ -101,7 +142,15 @@ export default function VerStock() {
                 <ArrowLeft size={20} className="mr-1" /> Volver
             </button>
 
-            <h1 className="text-2xl font-bold text-blue-900 mb-1">📦 Stock</h1>
+            <div className="flex justify-between items-center mb-1">
+                <h1 className="text-2xl font-bold text-blue-900">📦 Stock</h1>
+                <button
+                    onClick={() => setModalNuevo(true)}
+                    className="bg-blue-900 hover:bg-blue-800 text-white rounded-lg px-3 py-2 flex items-center gap-1 text-xs font-bold"
+                >
+                    <Plus size={16} /> Nuevo
+                </button>
+            </div>
             <p className="text-gray-500 text-sm mb-4">{totalProductos} productos • {stockBajo} bajo • {agotados} agotado</p>
 
             {/* Buscador */}
@@ -220,6 +269,32 @@ export default function VerStock() {
                     </div>
                 ))}
             </div>
+
+            {/* MODAL NUEVO PRODUCTO */}
+            {modalNuevo && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-3">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-bold text-blue-900">➕ Nuevo Producto</h3>
+                            <button onClick={() => setModalNuevo(false)}><X size={20} className="text-gray-500" /></button>
+                        </div>
+                        <form onSubmit={crearProducto} className="space-y-3">
+                            <input placeholder="Marca *" required value={nuevoProd.marca} onChange={e => setNuevoProd({ ...nuevoProd, marca: e.target.value })} className="w-full p-3 border rounded-lg" />
+                            <input placeholder="Estilo" value={nuevoProd.estilo} onChange={e => setNuevoProd({ ...nuevoProd, estilo: e.target.value })} className="w-full p-3 border rounded-lg" />
+                            <div className="grid grid-cols-2 gap-3">
+                                <input placeholder="Talla" value={nuevoProd.talla} onChange={e => setNuevoProd({ ...nuevoProd, talla: e.target.value })} className="w-full p-3 border rounded-lg" />
+                                <input placeholder="Color" value={nuevoProd.color} onChange={e => setNuevoProd({ ...nuevoProd, color: e.target.value })} className="w-full p-3 border rounded-lg" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <input placeholder="Precio Costo (opcional)" type="number" min="0" value={nuevoProd.costo} onChange={e => setNuevoProd({ ...nuevoProd, costo: e.target.value })} className="w-full p-3 border rounded-lg" />
+                                <input placeholder="Stock *" required type="number" min="0" value={nuevoProd.stock} onChange={e => setNuevoProd({ ...nuevoProd, stock: e.target.value })} className="w-full p-3 border rounded-lg" />
+                            </div>
+                            <input placeholder="Precio Venta (opcional)" type="number" min="0" value={nuevoProd.precio_venta} onChange={e => setNuevoProd({ ...nuevoProd, precio_venta: e.target.value })} className="w-full p-3 border rounded-lg" />
+                            <button type="submit" className="w-full bg-blue-900 text-white font-bold py-3 rounded-xl">Guardar Producto</button>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

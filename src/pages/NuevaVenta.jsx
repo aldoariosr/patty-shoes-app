@@ -17,7 +17,7 @@ export default function NuevaVenta() {
     const [modalCliente, setModalCliente] = useState(false)
     const [modalProducto, setModalProducto] = useState(false)
     const [nuevoCliente, setNuevoCliente] = useState({ codigo: '', nombre: '', telefono: '', direccion: '', ciudad: '' })
-    const [nuevoProducto, setNuevoProducto] = useState({ codigo: '', marca: '', estilo: '', talla: '', color: '', precio_venta: '', stock: '' })
+    const [nuevoProducto, setNuevoProducto] = useState({ codigo: '', marca: '', estilo: '', talla: '', color: '', costo: '', precio_venta: '', stock: '' })
 
     const [form, setForm] = useState({
         codigo: '',
@@ -213,23 +213,35 @@ export default function NuevaVenta() {
 
     async function crearProducto(e) {
         e.preventDefault()
-        const { data, error } = await supabase.from('productos').insert([{
+        // Precios opcionales: solo se envían si se cargaron
+        let payload = {
             codigo: nuevoProducto.codigo || `PRD-${Date.now()}`,
             marca: nuevoProducto.marca,
             estilo: nuevoProducto.estilo,
             talla: nuevoProducto.talla,
             color: nuevoProducto.color,
-            precio_venta: Number(nuevoProducto.precio_venta),
-            stock: Number(nuevoProducto.stock),
+            precio_venta: Number(nuevoProducto.precio_venta) || 0,
+            stock: Number(nuevoProducto.stock) || 0,
             activo: true,
-        }]).select()
+        }
+        if (nuevoProducto.costo !== '' && !isNaN(Number(nuevoProducto.costo))) {
+            payload.costo = Number(nuevoProducto.costo)
+        }
+
+        let { data, error } = await supabase.from('productos').insert([payload]).select()
+
+        // Si la tabla no tiene columna 'costo', reintentar sin ella
+        if (error && /costo/i.test(error.message || '')) {
+            delete payload.costo
+            ;({ data, error } = await supabase.from('productos').insert([payload]).select())
+        }
 
         if (!error && data) {
             setProductos([...productos, data[0]])
-            setForm({ ...form, producto_id: data[0].id, producto_nombre: `${data[0].marca} ${data[0].estilo}`, precio_venta: data[0].precio_venta })
+            setForm({ ...form, producto_id: data[0].id, producto_nombre: `${data[0].marca} ${data[0].estilo}`, precio_venta: data[0].precio_venta || '' })
             setBuscarProducto(`${data[0].marca} ${data[0].estilo}`)
             setModalProducto(false)
-            setNuevoProducto({ codigo: '', marca: '', estilo: '', talla: '', color: '', precio_venta: '', stock: '' })
+            setNuevoProducto({ codigo: '', marca: '', estilo: '', talla: '', color: '', costo: '', precio_venta: '', stock: '' })
         } else {
             alert('Error al crear producto: ' + error?.message)
         }
@@ -468,9 +480,10 @@ export default function NuevaVenta() {
                             <input placeholder="Talla" value={nuevoProducto.talla} onChange={e => setNuevoProducto({ ...nuevoProducto, talla: e.target.value })} className="w-full p-3 border rounded-lg" />
                             <input placeholder="Color" value={nuevoProducto.color} onChange={e => setNuevoProducto({ ...nuevoProducto, color: e.target.value })} className="w-full p-3 border rounded-lg" />
                             <div className="grid grid-cols-2 gap-3">
-                                <input placeholder="Precio Venta (opcional)" type="number" min="0" value={nuevoProducto.precio_venta} onChange={e => setNuevoProducto({ ...nuevoProducto, precio_venta: e.target.value })} className="w-full p-3 border rounded-lg" />
-                                <input placeholder="Stock *" required type="number" value={nuevoProducto.stock} onChange={e => setNuevoProducto({ ...nuevoProducto, stock: e.target.value })} className="w-full p-3 border rounded-lg" />
+                                <input placeholder="Precio Costo (opcional)" type="number" min="0" value={nuevoProducto.costo} onChange={e => setNuevoProducto({ ...nuevoProducto, costo: e.target.value })} className="w-full p-3 border rounded-lg" />
+                                <input placeholder="Stock *" required type="number" min="0" value={nuevoProducto.stock} onChange={e => setNuevoProducto({ ...nuevoProducto, stock: e.target.value })} className="w-full p-3 border rounded-lg" />
                             </div>
+                            <input placeholder="Precio Venta (opcional)" type="number" min="0" value={nuevoProducto.precio_venta} onChange={e => setNuevoProducto({ ...nuevoProducto, precio_venta: e.target.value })} className="w-full p-3 border rounded-lg" />
                             <button type="submit" className="w-full bg-blue-900 text-white font-bold py-3 rounded-xl">Guardar Producto</button>
                         </form>
                     </div>

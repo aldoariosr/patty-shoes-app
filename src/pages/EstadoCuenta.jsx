@@ -4,7 +4,7 @@ import { calcularDeudasPorCliente } from '../lib/deudas'
 import { descripcionProducto } from '../lib/descripcion'
 import { parseFecha } from '../lib/fechas'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Search, Download, Package, X, FileDown, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, Search, Download, Package, X, FileDown, AlertTriangle, ChevronDown, ChevronUp, CheckCircle, Clock } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import * as XLSX from 'xlsx'
 
@@ -28,6 +28,41 @@ export default function EstadoCuenta() {
     // Completar datos de registros históricos sin monto (Total 0 / "Sin Clasificar")
     const [editandoHist, setEditandoHist] = useState(null)
     const [formHist, setFormHist] = useState({ producto: '', total: '' })
+
+    // Detalle de pagos por cuenta (método, fechas, puntualidad)
+    const [pagosVisibles, setPagosVisibles] = useState(null)
+    const [detallePagos, setDetallePagos] = useState({})
+
+    async function alternarPagos(cuenta) {
+        if (pagosVisibles === cuenta.id) {
+            setPagosVisibles(null)
+            return
+        }
+        setPagosVisibles(cuenta.id)
+        if (cuenta.pedidoId && !detallePagos[cuenta.id]) {
+            const { data } = await supabase
+                .from('pagos')
+                .select('*')
+                .eq('pedido_id', cuenta.pedidoId)
+                .order('cuota_numero', { ascending: true })
+            setDetallePagos(prev => ({ ...prev, [cuenta.id]: data || [] }))
+        }
+    }
+
+    // Puntualidad de un pago: compara fecha de pago contra el vencimiento teórico de la cuota
+    function evaluarPuntualidad(pago, cuenta) {
+        if (!pago.cuota_numero || pago.cuota_numero <= 0 || !cuenta.fecha) return null
+        const intervalos = { '1': 7, '2': 15, '3': 30 }
+        const venc = parseFecha(cuenta.fecha)
+        if (!venc) return null
+        venc.setDate(venc.getDate() + pago.cuota_numero * (intervalos[cuenta.tipoCuota || '3'] || 30))
+        const fechaPago = new Date(pago.fecha_pago)
+        if (isNaN(fechaPago.getTime())) return null
+        const dias = Math.floor((fechaPago - venc) / (1000 * 60 * 60 * 24))
+        return dias <= 0
+            ? { puntual: true, texto: '✅ Puntual' }
+            : { puntual: false, texto: `⏱️ ${dias} día${dias !== 1 ? 's' : ''} tarde` }
+    }
 
     // Lista de clientes con deuda pendiente (pantalla de inicio)
     const [deudores, setDeudores] = useState([])
@@ -133,6 +168,8 @@ export default function EstadoCuenta() {
                 pagado: (p.total_venta || 0) - (p.saldo || 0),
                 estado: p.estado,
                 cuotasAtrasadas,
+                tipoCuota: p.tipo_cuota,
+                numCuotas: p.num_cuotas,
             })
         }
 
@@ -583,6 +620,51 @@ export default function EstadoCuenta() {
                                                     </div>
                                                     {tieneSaldo && esCobrarable && (
                                                         <p className="text-[10px] text-blue-600 mt-1 font-medium">👆 Tocar para cobrar esta cuenta</p>
+                                                    )}
+
+                                                    {/* Detalle de pagos (solo cuentas de la app) */}
+                                                    {c.fuente === 'app' && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); alternarPagos(c) }}
+                                                            className="w-full mt-2 bg-gray-100 hover:bg-blue-50 text-gray-700 text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1"
+                                                        >
+                                                            💳 {pagosVisibles === c.id ? 'Ocultar pagos' : 'Ver historial de pagos'}
+                                                        </button>
+                                                    )}
+                                                    {c.fuente === 'app' && pagosVisibles === c.id && (
+                                                        <div className="mt-2 border-t pt-2 space-y-1" onClick={(e) => e.stopPropagation()}>
+                                                            {(detallePagos[c.id] || []).length === 0 ? (
+                                                                <p className="text-xs text-gray-400 text-center py-1">Sin pagos registrados todavía</p>
+                                                            ) : (
+                                                                detallePagos[c.id].map((pg) => {
+                                                                    const puntualidad = evaluarPuntualidad(pg, c)
+                                                                    return (
+                                                                        <div key={pg.id} className="bg-blue-50 rounded-lg p-2 flex justify-between items-center text-xs">
+                                                                            <div className="min-w-0">
+                                                                                <p className="font-bold text-gray-800">
+                                                                                    {(pg.cuota_numero || 0) > 0 ? `Cuota #${pg.cuota_numero}` : 'Pago inicial / abono'}
+                                                                                    {pg.total_cuotas ? ` de ${pg.total_cuotas}` : ''}
+                                                                                </p>
+                                                                                <p className="text-gray-500 flex items-center gap-2 flex-wrap mt-0.5">
+                                                                                    <span className="flex items-center gap-0.5"><Clock size={9} />{new Date(pg.fecha_pago).toLocaleDateString('es-PY')}</span>
+                                                                                    <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-semibold">💳 {pg.metodo_pago}</span>
+                                                                                    {pg.referencia && <span className="text-gray-400">Ref: {pg.referencia}</span>}
+                                                                                </p>
+                                                                                {puntualidad && (
+                                                                                    <p className={`mt-0.5 font-semibold ${puntualidad.puntual ? 'text-green-600' : 'text-orange-600'}`}>
+                                                                                        {puntualidad.texto}
+                                                                                    </p>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="text-right shrink-0 ml-2">
+                                                                                <p className="font-bold text-green-700">Gs {(pg.monto_pagado || 0).toLocaleString()}</p>
+                                                                                <p className="text-[10px] text-gray-400 flex items-center gap-0.5 justify-end"><CheckCircle size={9} />{pg.estado}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    )
+                                                                })
+                                                            )}
+                                                        </div>
                                                     )}
                                                     {c.fuente === 'historico' && !c.total && (
                                                         <button

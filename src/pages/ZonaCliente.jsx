@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, TrendingUp, DollarSign, AlertTriangle, Calendar, BarChart3, X } from 'lucide-react'
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts'
+import { parseFecha } from '../lib/fechas'
 
 export default function ZonaCliente() {
     const navigate = useNavigate()
@@ -17,6 +18,81 @@ export default function ZonaCliente() {
     const [historial, setHistorial] = useState([])
     const [graficoData, setGraficoData] = useState([])
     const [ranking, setRanking] = useState([])
+
+    // Reporte de utilidades por período (auditoría)
+    const [periodoUtilidad, setPeriodoUtilidad] = useState('mes')
+    const [utilidades, setUtilidades] = useState({ ventas: 0, costo: 0, ganancia: 0, cantidad: 0, sinCosto: 0 })
+    const [cargandoUtilidades, setCargandoUtilidades] = useState(true)
+
+    useEffect(() => {
+        async function calcularUtilidades() {
+            setCargandoUtilidades(true)
+            try {
+                const ahora = new Date()
+                let inicio
+                if (periodoUtilidad === 'semana') {
+                    inicio = new Date(ahora)
+                    inicio.setDate(ahora.getDate() - 6)
+                } else if (periodoUtilidad === 'semestre') {
+                    inicio = new Date(ahora.getFullYear(), ahora.getMonth() - 5, 1)
+                } else if (periodoUtilidad === 'anio') {
+                    inicio = new Date(ahora.getFullYear(), 0, 1)
+                } else {
+                    inicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+                }
+                inicio.setHours(0, 0, 0, 0)
+                const inicioISO = new Date(inicio.getTime() - inicio.getTimezoneOffset() * 60000).toISOString()
+
+                const [{ data: pedidosApp }, { data: historicoExcel }, { data: codigosEspeciales }] = await Promise.all([
+                    supabase.from('pedidos')
+                        .select('cantidad, total_venta, producto:productos(costo)')
+                        .neq('estado', 'Cancelado')
+                        .gte('fecha_pedido', inicioISO),
+                    // Histórico del Excel: se trae completo y se filtra por fecha acá,
+                    // porque las fechas pueden venir como serial de Excel
+                    supabase.from('ventas_historicas')
+                        .select('id, venta, costo, fecha_venta'),
+                    supabase.from('pedidos')
+                        .select('codigo')
+                        .or('codigo.ilike.PED-HIST-%,codigo.ilike.PED-IMP-%'),
+                ])
+
+                // Históricas ya migradas a la app: no contarlas doble
+                const migrados = new Set((codigosEspeciales || []).map(p => p.codigo))
+
+                let ventas = 0, costo = 0, sinCosto = 0, cantidad = 0
+
+                for (const p of pedidosApp || []) {
+                    ventas += Number(p.total_venta) || 0
+                    cantidad++
+                    if (p.producto?.costo != null && !isNaN(Number(p.producto.costo))) {
+                        costo += Number(p.producto.costo) * (p.cantidad || 1)
+                    } else {
+                        sinCosto++
+                    }
+                }
+
+                for (const v of historicoExcel || []) {
+                    if (migrados.has(`PED-HIST-${v.id}`) || migrados.has(`PED-IMP-${v.id}`)) continue
+                    const fecha = parseFecha(v.fecha_venta)
+                    if (!fecha || fecha < inicio) continue
+                    ventas += Number(v.venta) || 0
+                    cantidad++
+                    if (v.costo != null && !isNaN(Number(v.costo))) {
+                        costo += Number(v.costo)
+                    } else {
+                        sinCosto++
+                    }
+                }
+
+                setUtilidades({ ventas, costo, ganancia: ventas - costo, cantidad, sinCosto })
+            } catch (err) {
+                console.error('Error calculando utilidades:', err)
+            }
+            setCargandoUtilidades(false)
+        }
+        calcularUtilidades()
+    }, [periodoUtilidad])
 
     // Estados para modales
     const [modalAbierto, setModalAbierto] = useState(null)
@@ -194,6 +270,63 @@ export default function ZonaCliente() {
                     <p className="text-xs text-gray-500 font-medium">Stock Crítico</p>
                     <p className="text-lg font-bold text-red-700">{stats.stockBajo} prod.</p>
                 </div>
+            </div>
+
+            {/* Reporte de Utilidades (auditoría) */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
+                <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-sm font-bold text-gray-700">📈 Utilidades</h3>
+                    <div className="flex gap-1">
+                        {[
+                            { id: 'semana', label: 'Sem' },
+                            { id: 'mes', label: 'Mes' },
+                            { id: 'semestre', label: '6M' },
+                            { id: 'anio', label: 'Año' },
+                        ].map(p => (
+                            <button
+                                key={p.id}
+                                onClick={() => setPeriodoUtilidad(p.id)}
+                                className={`text-[10px] px-2 py-1 rounded-full font-bold ${periodoUtilidad === p.id ? 'bg-purple-700 text-white' : 'bg-gray-100 text-gray-600'}`}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {cargandoUtilidades ? (
+                    <p className="text-center text-gray-400 text-sm py-4">Calculando...</p>
+                ) : (
+                    <>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="bg-blue-50 rounded-lg p-2">
+                                <p className="text-[10px] text-blue-600 font-semibold uppercase">Ventas</p>
+                                <p className="text-sm font-bold text-blue-900">{utilidades.ventas.toLocaleString()}</p>
+                            </div>
+                            <div className="bg-orange-50 rounded-lg p-2">
+                                <p className="text-[10px] text-orange-600 font-semibold uppercase">Costo</p>
+                                <p className="text-sm font-bold text-orange-700">{utilidades.costo.toLocaleString()}</p>
+                            </div>
+                            <div className={`rounded-lg p-2 ${utilidades.ganancia >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+                                <p className={`text-[10px] font-semibold uppercase ${utilidades.ganancia >= 0 ? 'text-green-600' : 'text-red-500'}`}>Ganancia</p>
+                                <p className={`text-sm font-bold ${utilidades.ganancia >= 0 ? 'text-green-700' : 'text-red-700'}`}>{utilidades.ganancia.toLocaleString()}</p>
+                            </div>
+                        </div>
+                        <div className="flex justify-between items-center mt-2">
+                            <p className="text-[11px] text-gray-400">
+                                {utilidades.cantidad} pedido{utilidades.cantidad !== 1 ? 's' : ''}
+                                {utilidades.cantidad > 0 && utilidades.ventas > 0 && (
+                                    <> • Margen: {Math.round((utilidades.ganancia / utilidades.ventas) * 100)}%</>
+                                )}
+                            </p>
+                            {utilidades.sinCosto > 0 && (
+                                <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-full">
+                                    ⚠️ {utilidades.sinCosto} sin costo cargado
+                                </span>
+                            )}
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Gráfico de Tendencias */}

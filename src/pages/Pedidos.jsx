@@ -20,7 +20,8 @@ export default function Pedidos() {
         referencia: '',
         marcarEntregado: true,
         notas: '',
-        precio_final: ''
+        precio_final: '',
+        costo_final: ''
     })
 
     useEffect(() => {
@@ -60,7 +61,8 @@ export default function Pedidos() {
             referencia: '',
             marcarEntregado: true,
             notas: 'Pago inicial - Primera cuota',
-            precio_final: ''
+            precio_final: '',
+            costo_final: ''
         })
         setMostrarModal(true)
     }
@@ -75,11 +77,17 @@ export default function Pedidos() {
         try {
             let pedidoActual = pedidoAProcesar
 
-            // Pedido registrado sin precio: definirlo recién en la entrega
+            // Pedido registrado sin precio: definir costo y precio recién en la entrega
             if (!pedidoActual.total_venta) {
                 const precioFinal = Number(form.precio_final)
+                const costoNum = Number(form.costo_final)
                 if (!precioFinal || precioFinal <= 0) {
                     alert('Definí el precio de venta del producto')
+                    setProcesando(false)
+                    return
+                }
+                if (!costoNum || costoNum <= 0) {
+                    alert('Definí el precio de costo del producto (necesario para calcular utilidades)')
                     setProcesando(false)
                     return
                 }
@@ -89,6 +97,17 @@ export default function Pedidos() {
                     .update({ precio_venta: precioFinal })
                     .eq('id', pedidoActual.id)
                 if (errorPrecio) throw errorPrecio
+
+                // Guardar el costo en el producto (para auditoría de utilidades)
+                if (pedidoActual.producto_id) {
+                    const { error: errCosto } = await supabase
+                        .from('productos')
+                        .update({ costo: costoNum })
+                        .eq('id', pedidoActual.producto_id)
+                    if (errCosto && !/costo/i.test(errCosto.message || '')) throw errCosto
+                    // Si la tabla no tiene columna 'costo', no bloquea la entrega
+                }
+
                 pedidoActual = { ...pedidoActual, total_venta: precioFinal, saldo: precioFinal }
             }
 
@@ -252,20 +271,37 @@ export default function Pedidos() {
                         </div>
 
                         <form onSubmit={procesarPago} className="space-y-3">
-                            {/* Definir precio si el pedido se registró sin él */}
+                            {/* Definir precio y costo si el pedido se registró sin ellos */}
                             {!pedidoAProcesar.total_venta && (
-                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                    <label className="block text-xs font-bold text-amber-900 mb-1">🏷️ Precio de venta (sin definir)</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        required
-                                        placeholder="Ej: 350000"
-                                        value={form.precio_final}
-                                        onChange={(e) => setForm({ ...form, precio_final: e.target.value })}
-                                        className="w-full p-3 border border-amber-300 rounded-lg text-lg font-bold text-center"
-                                    />
-                                    <p className="text-[10px] text-amber-700 mt-1">Se fijará ahora y no se podrá cambiar después</p>
+                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                                    <p className="text-[11px] font-bold text-amber-900">🏷️ Cargar precios del producto (obligatorio)</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-xs font-bold text-amber-900 mb-1">Precio Costo</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                required
+                                                placeholder="Ej: 250000"
+                                                value={form.costo_final}
+                                                onChange={(e) => setForm({ ...form, costo_final: e.target.value })}
+                                                className="w-full p-3 border border-amber-300 rounded-lg text-sm font-bold text-center"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-amber-900 mb-1">Precio Venta</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                required
+                                                placeholder="Ej: 350000"
+                                                value={form.precio_final}
+                                                onChange={(e) => setForm({ ...form, precio_final: e.target.value })}
+                                                className="w-full p-3 border border-amber-300 rounded-lg text-sm font-bold text-center"
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-[10px] text-amber-700">El costo se guarda para calcular utilidades en la auditoría</p>
                                 </div>
                             )}
 
